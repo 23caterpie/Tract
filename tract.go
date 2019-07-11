@@ -20,10 +20,10 @@ type Tract interface {
 	// Init initializes the Tract. Must be called before calling Start().
 	Init() error
 	// Start starts the Tract. Returns a callback that waits for the Tract to finish processing.
-	// Callback musted be called to close pool resources
+	// Callback must be called to close resources
 	Start() func()
-	// setInput sets the input of the pool
+	// setInput sets the input of the tract
 	SetInput(Input)
-	// setOutput sets the output of the pool
+	// setOutput sets the output of the tract
 	SetOutput(Output)
 }
