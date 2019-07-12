@@ -136,10 +136,13 @@ func process(input Input, worker Worker, output Output, metricsHandler MetricsHa
 		outputRequest, shouldSend = w.Work(inputRequest)
 		if shouldSend {
 			out.Put(outputRequest)
-		} else if isHeadTract {
-			// If this is the head tract, then the worker is responsible for termination.
-			// If the worker returns a "should not send" result, this is a signal to stop processing.
-			break
+		} else {
+			cleanupRequest(outputRequest)
+			if isHeadTract {
+				// If this is the head tract, then the worker is responsible for termination.
+				// If the worker returns a "should not send" result, this is a signal to stop processing.
+				break
+			}
 		}
 	}
 }

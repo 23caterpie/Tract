@@ -34,7 +34,7 @@ type InputGenerator struct{}
 // The current time is stored in the request at this generation time.
 // It can be retrieved by using GetRequestStartTime().
 func (c InputGenerator) Get() (Request, bool) {
-	return context.WithValue(context.Background(), requestTimeStart{}, now()), true
+	return setRequestStartTime(context.Background(), now()), true
 }
 
 // MetricsInput is a wrapper around an Input that will automatically generate input latency metrics

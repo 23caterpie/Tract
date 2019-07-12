@@ -37,7 +37,9 @@ func (c OutputChannel) Close() {
 type FinalOutput struct{}
 
 // Put sinks the request (noop).
-func (c FinalOutput) Put(r Request) {}
+func (c FinalOutput) Put(r Request) {
+	cleanupRequest(r)
+}
 
 // Close is a noop.
 func (c FinalOutput) Close() {}
