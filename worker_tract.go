@@ -99,11 +99,6 @@ func (p *workerTract) applyOptions() {
 }
 
 func (p *workerTract) close() {
-	for i := range p.workers {
-		if worker := p.workers[i]; worker != nil {
-			worker.Close()
-		}
-	}
 	p.closeWorkers()
 	p.output.Close()
 	p.factory.Close()

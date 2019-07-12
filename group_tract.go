@@ -60,8 +60,8 @@ func (p *serialGroupTract) Start() func() {
 		callbacks = append(callbacks, p.tracts[i].Start())
 	}
 	return func() {
-		for _, f := range callbacks {
-			f()
+		for i := len(callbacks) - 1; i >= 0; i-- {
+			callbacks[i]()
 		}
 	}
 }
