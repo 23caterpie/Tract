@@ -384,13 +384,18 @@ func TestParalellGroupTract(t *testing.T) {
 func TestFanOutlGroupTract(t *testing.T) {
 	// 100 requests
 	workSource := []struct{}{99: {}}
-	numberOfRequestsProcessed := [3]int64{}
+	var (
+		numberOfRequestsProcessed = [3]int64{}
+		numberOfMadeWorkers       int64
+		numberOfFactoriesClosed   int64
+		numberOfWorkersClosed     int64
+	)
 	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
 		tract.NewWorkerTract("head", 1, testWorkerFactory{
-			flagMakeWorker: func() {},
-			flagClose:      func() {},
+			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
 			Worker: testWorker{
-				flagClose: func() {},
+				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
 				work: func(r tract.Request) (tract.Request, bool) {
 					if len(workSource) == 0 {
 						return r, false
@@ -402,10 +407,10 @@ func TestFanOutlGroupTract(t *testing.T) {
 		}),
 		tract.NewFanOutGroupTract("myFanOutGroupTract",
 			tract.NewWorkerTract("tail", 1, testWorkerFactory{
-				flagMakeWorker: func() {},
-				flagClose:      func() {},
+				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
 				Worker: testWorker{
-					flagClose: func() {},
+					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
 					work: func(r tract.Request) (tract.Request, bool) {
 						atomic.AddInt64(&numberOfRequestsProcessed[0], 1)
 						return r, true
@@ -413,10 +418,10 @@ func TestFanOutlGroupTract(t *testing.T) {
 				},
 			}),
 			tract.NewWorkerTract("tail", 2, testWorkerFactory{
-				flagMakeWorker: func() {},
-				flagClose:      func() {},
+				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
 				Worker: testWorker{
-					flagClose: func() {},
+					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
 					work: func(r tract.Request) (tract.Request, bool) {
 						atomic.AddInt64(&numberOfRequestsProcessed[1], 1)
 						return r, true
@@ -424,10 +429,10 @@ func TestFanOutlGroupTract(t *testing.T) {
 				},
 			}),
 			tract.NewWorkerTract("tail", 4, testWorkerFactory{
-				flagMakeWorker: func() {},
-				flagClose:      func() {},
+				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
 				Worker: testWorker{
-					flagClose: func() {},
+					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
 					work: func(r tract.Request) (tract.Request, bool) {
 						atomic.AddInt64(&numberOfRequestsProcessed[2], 1)
 						return r, true
@@ -437,9 +442,56 @@ func TestFanOutlGroupTract(t *testing.T) {
 		),
 	)
 
+	// Pre-Init Checks
+	var (
+		expectedNumberOfRequestsProcessed int64 = 0
+		expectedNumberOfMadeWorkers       int64 = 0
+		expectedNumberOfFactoriesClosed   int64 = 0
+		expectedNumberOfWorkersClosed     int64 = 0
+	)
+	var totalNumberOfRequestsProcessed int64
+	for _, n := range numberOfRequestsProcessed {
+		totalNumberOfRequestsProcessed += n
+	}
+	if totalNumberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
+		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, totalNumberOfRequestsProcessed)
+	}
+	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
+		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
+	}
+	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
+		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
+	}
+	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
+		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
+	}
+
 	err := myTract.Init()
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
+	}
+
+	// Pre-Start Checks
+	expectedNumberOfRequestsProcessed = 0
+	expectedNumberOfMadeWorkers = 8
+	expectedNumberOfFactoriesClosed = 0
+	expectedNumberOfWorkersClosed = 0
+
+	totalNumberOfRequestsProcessed = 0
+	for _, n := range numberOfRequestsProcessed {
+		totalNumberOfRequestsProcessed += n
+	}
+	if totalNumberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
+		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, totalNumberOfRequestsProcessed)
+	}
+	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
+		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
+	}
+	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
+		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
+	}
+	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
+		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
 
 	expectedName := "mySerialGroupTract"
@@ -450,12 +502,26 @@ func TestFanOutlGroupTract(t *testing.T) {
 
 	myTract.Start()()
 
-	var totalNumberOfRequestsProcessed int64
+	// Finished Checks
+	expectedNumberOfRequestsProcessed = 300
+	expectedNumberOfMadeWorkers = 8
+	expectedNumberOfFactoriesClosed = 4
+	expectedNumberOfWorkersClosed = 8
+
+	totalNumberOfRequestsProcessed = 0
 	for _, n := range numberOfRequestsProcessed {
 		totalNumberOfRequestsProcessed += n
 	}
-	expectedNumberOfRequestsProcessed := int64(300)
 	if totalNumberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, totalNumberOfRequestsProcessed)
+	}
+	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
+		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
+	}
+	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
+		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
+	}
+	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
+		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
 }
