@@ -38,7 +38,7 @@ type FinalOutput struct{}
 
 // Put sinks the request (noop).
 func (c FinalOutput) Put(r Request) {
-	cleanupRequest(r)
+	cleanupRequest(r, true)
 }
 
 // Close is a noop.
