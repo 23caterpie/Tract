@@ -26,7 +26,8 @@ func link(from, to Tract) {
 //    -------------------------------------------
 // -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
 //    -------------------------------------------
-func NewSerialGroupTract(name string, tracts ...Tract) Tract {
+func NewSerialGroupTract(name string, tract Tract, tracts ...Tract) Tract {
+	tracts = append([]Tract{tract}, tracts...)
 	Chain(tracts...)
 	return &serialGroupTract{
 		name:   name,
@@ -80,7 +81,7 @@ func (p *serialGroupTract) SetOutput(out Output) {
 	p.tracts[len(p.tracts)-1].SetOutput(out)
 }
 
-// NewParalellGroupTract makes a new tract that consists muliple other tracts.
+// NewParalellGroupTract makes a new tract that consists of muliple other tracts.
 // Each request this tract receives is routed to 1 of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
 //    -----------------
@@ -89,12 +90,13 @@ func (p *serialGroupTract) SetOutput(out Output) {
 //    | \ ( Tract2 ) / |
 //    |      ...      |
 //    -----------------
-func NewParalellGroupTract(name string, tracts ...Tract) Tract {
-	tract := &paralellGroupTract{}
-	tract.name = name
-	tract.tracts = tracts
-	tract.output = FinalOutput{}
-	return tract
+func NewParalellGroupTract(name string, tract Tract, tracts ...Tract) Tract {
+	tracts = append([]Tract{tract}, tracts...)
+	pTract := &paralellGroupTract{}
+	pTract.name = name
+	pTract.tracts = tracts
+	pTract.output = FinalOutput{}
+	return pTract
 }
 
 type paralellGroupTract struct {
@@ -138,21 +140,22 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 //    | \ ( Tract2 ) / |
 //    |      ...      |
 //    -----------------
-func NewFanOutGroupTract(name string, tracts ...Tract) Tract {
+func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
+	tracts = append([]Tract{tract}, tracts...)
 	fanOutTract := &fanOutTract{
 		input: InputGenerator{},
 	}
 	for _, tract := range tracts {
 		link(fanOutTract, tract)
 	}
-	tract := &fanOutGroupTract{}
-	tract.name = name
-	tract.tracts = append(
+	fTract := &fanOutGroupTract{}
+	fTract.name = name
+	fTract.tracts = append(
 		[]Tract{fanOutTract},
 		tracts...,
 	)
-	tract.output = FinalOutput{}
-	return tract
+	fTract.output = FinalOutput{}
+	return fTract
 }
 
 type fanOutGroupTract struct {
