@@ -24,10 +24,39 @@ type Worker interface {
 
 var (
 	_ WorkerFactory = &tractWorkerFactory{}
+	_ WorkerFactory = workerAsFactory{}
 
 	_ Worker = MetricsWorker{}
 	_ Worker = tractWorker{}
 )
+
+// NewFactoryFromWorker makes a WorkerFactory from a provided Worker.
+// Whenever the WorkerFactory makes a worker, it just returns same worker
+// it started with. This is useful for the common case of making a tract
+// that uses workers who's Work() function is already thred safe. without
+// having to make a specific factory object. The worker's call to close is
+// defered until the factory is closed.
+func NewFactoryFromWorker(worker Worker) WorkerFactory {
+	return workerAsFactory{worker: worker}
+}
+
+type workerAsFactory struct {
+	worker Worker
+}
+
+func (f workerAsFactory) MakeWorker() (Worker, error) {
+	return nonCloseWorker{f.worker}, nil
+}
+
+func (f workerAsFactory) Close() {
+	f.worker.Close()
+}
+
+type nonCloseWorker struct {
+	Worker
+}
+
+func (f nonCloseWorker) Close() {}
 
 // MetricsWorker is a wrapper around a Worker that will automatically generate during latency metrics.
 type MetricsWorker struct {

@@ -15,6 +15,7 @@ type Output interface {
 var (
 	_ Output = OutputChannel(nil)
 	_ Output = FinalOutput{}
+	_ Output = nonCloseOutput{}
 	_ Output = MetricsOutput{}
 )
 
@@ -43,6 +44,15 @@ func (c FinalOutput) Put(r Request) {
 
 // Close is a noop.
 func (c FinalOutput) Close() {}
+
+// nonCloseOutput is an Output wrapper that turns the `Close()` method to a noop.
+// Used in group tracts that can possibly fan request into an output, thus requiring
+// the group tract to handling closing for all inner tracts.
+type nonCloseOutput struct {
+	Output
+}
+
+func (c nonCloseOutput) Close() {}
 
 // MetricsOutput is a wrapper around an Output that will automatically generate output latency metrics
 type MetricsOutput struct {

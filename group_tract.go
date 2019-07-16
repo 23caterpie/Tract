@@ -93,11 +93,21 @@ func NewParalellGroupTract(name string, tracts ...Tract) Tract {
 	tract := &paralellGroupTract{}
 	tract.name = name
 	tract.tracts = tracts
+	tract.output = FinalOutput{}
 	return tract
 }
 
 type paralellGroupTract struct {
 	serialGroupTract
+	output Output
+}
+
+func (p *paralellGroupTract) Start() func() {
+	wait := p.serialGroupTract.Start()
+	return func() {
+		wait()
+		p.output.Close()
+	}
 }
 
 func (p *paralellGroupTract) SetInput(in Input) {
@@ -114,7 +124,7 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 		return
 	}
 	for _, tract := range p.tracts {
-		tract.SetOutput(out)
+		tract.SetOutput(nonCloseOutput{Output: out})
 	}
 }
 
@@ -140,11 +150,21 @@ func NewFanOutGroupTract(name string, tracts ...Tract) Tract {
 		[]Tract{fanOutTract},
 		tracts...,
 	)
+	tract.output = FinalOutput{}
 	return tract
 }
 
 type fanOutGroupTract struct {
 	serialGroupTract
+	output Output
+}
+
+func (p *fanOutGroupTract) Start() func() {
+	wait := p.serialGroupTract.Start()
+	return func() {
+		wait()
+		p.output.Close()
+	}
 }
 
 func (p *fanOutGroupTract) SetOutput(out Output) {
@@ -153,6 +173,6 @@ func (p *fanOutGroupTract) SetOutput(out Output) {
 		return
 	}
 	for _, tract := range p.tracts[1:] {
-		tract.SetOutput(out)
+		tract.SetOutput(nonCloseOutput{Output: out})
 	}
 }

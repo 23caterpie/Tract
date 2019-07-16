@@ -551,7 +551,7 @@ func TestTractWorker(t *testing.T) {
 		numberOfFactoriesClosed      int64
 		numberOfWorkersClosed        int64
 		numberOfRequestCleanups      = [3]map[int]struct{}{{}, {}, {}}
-		numberOfRequestCleanupsMutex = sync.Mutex{}
+		numberOfRequestCleanupsMutex = &sync.Mutex{}
 	)
 	myWorkerFactory := tract.NewTractWorkerFactory(
 		tract.NewSerialGroupTract("tractWorkerGroup",
@@ -624,9 +624,11 @@ func TestTractWorker(t *testing.T) {
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	numberOfRequestCleanupsMutex.Lock()
 	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
 		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
 	}
+	numberOfRequestCleanupsMutex.Unlock()
 
 	myWorker, err := myWorkerFactory.MakeWorker()
 	if err != nil {
@@ -652,9 +654,11 @@ func TestTractWorker(t *testing.T) {
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	numberOfRequestCleanupsMutex.Lock()
 	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
 		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
 	}
+	numberOfRequestCleanupsMutex.Unlock()
 
 	myResults := make([]tract.Request, 100)
 	wg := sync.WaitGroup{}
@@ -735,9 +739,11 @@ func TestTractWorker(t *testing.T) {
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	numberOfRequestCleanupsMutex.Lock()
 	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
 		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
 	}
+	numberOfRequestCleanupsMutex.Unlock()
 
 	myWorker.Close()
 	myWorkerFactory.Close()
@@ -787,9 +793,11 @@ func TestTractWorker(t *testing.T) {
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	numberOfRequestCleanupsMutex.Lock()
 	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
 		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
 	}
+	numberOfRequestCleanupsMutex.Unlock()
 
 	// Cleanups we set before sending the request through the tract worker should not have been called, and should still exist for us to call.
 	// Any cleanups the tract inside the worker performed should have been called already and removed.
@@ -853,7 +861,9 @@ func TestTractWorker(t *testing.T) {
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	numberOfRequestCleanupsMutex.Lock()
 	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
 		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
 	}
+	numberOfRequestCleanupsMutex.Unlock()
 }
