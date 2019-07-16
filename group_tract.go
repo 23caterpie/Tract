@@ -126,6 +126,7 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 	for _, tract := range p.tracts {
 		tract.SetOutput(nonCloseOutput{Output: out})
 	}
+	p.output = out
 }
 
 // NewFanOutGroupTract makes a new tract that consists muliple other tracts.
@@ -175,4 +176,5 @@ func (p *fanOutGroupTract) SetOutput(out Output) {
 	for _, tract := range p.tracts[1:] {
 		tract.SetOutput(nonCloseOutput{Output: out})
 	}
+	p.output = out
 }
