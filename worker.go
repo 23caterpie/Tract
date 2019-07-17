@@ -93,11 +93,9 @@ func (w MetricsWorker) Work(r Request) (Request, bool) {
 // cleanups put on the request before hand will occur when they normally would
 // have.
 func NewTractWorkerFactory(tract Tract) WorkerFactory {
-	input := make(chan Request)
-	tract.SetInput(InputChannel(input))
 	return &tractWorkerFactory{
 		Tract:      tract,
-		tractInput: input,
+		tractInput: make(chan Request),
 	}
 }
 
@@ -111,6 +109,7 @@ type tractWorkerFactory struct {
 func (w *tractWorkerFactory) MakeWorker() (Worker, error) {
 	var err error
 	w.startTractOnce.Do(func() {
+		w.Tract.SetInput(InputChannel(w.tractInput))
 		err = w.Tract.Init()
 		if err != nil {
 			return
@@ -130,6 +129,7 @@ func (w *tractWorkerFactory) Close() {
 	if w.tractClosure != nil {
 		w.tractClosure()
 	}
+	w.startTractOnce = sync.Once{}
 }
 
 type tractWorker struct {

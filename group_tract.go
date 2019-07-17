@@ -28,7 +28,6 @@ func link(from, to Tract) {
 //    ----------------------------------------------
 func NewSerialGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
-	Chain(tracts...)
 	return &serialGroupTract{
 		name:   name,
 		tracts: tracts,
@@ -45,6 +44,11 @@ func (p *serialGroupTract) Name() string {
 }
 
 func (p *serialGroupTract) Init() error {
+	Chain(p.tracts...)
+	return p.init()
+}
+
+func (p *serialGroupTract) init() error {
 	var err error
 	for _, tract := range p.tracts {
 		err = tract.Init()
@@ -104,6 +108,10 @@ type paralellGroupTract struct {
 	output Output
 }
 
+func (p *paralellGroupTract) Init() error {
+	return p.init()
+}
+
 func (p *paralellGroupTract) Start() func() {
 	wait := p.serialGroupTract.Start()
 	return func() {
@@ -145,9 +153,6 @@ func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	fanOutTract := &fanOutTract{
 		input: InputGenerator{},
 	}
-	for _, tract := range tracts {
-		link(fanOutTract, tract)
-	}
 	fTract := &fanOutGroupTract{}
 	fTract.name = name
 	fTract.tracts = append(
@@ -161,6 +166,14 @@ func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 type fanOutGroupTract struct {
 	serialGroupTract
 	output Output
+}
+
+func (p *fanOutGroupTract) Init() error {
+	// Connect the fan out tract to all the other tracts.
+	for _, tract := range p.tracts[1:] {
+		link(p.tracts[0], tract)
+	}
+	return p.init()
 }
 
 func (p *fanOutGroupTract) Start() func() {
