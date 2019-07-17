@@ -58,7 +58,7 @@ func (w SquareRootWorker) Close() {}
 // safe, thus a mutex is being used.
 type SliceArgReaderWorker struct {
 	arguments []float64
-	mutex     *sync.Mutex
+	mutex     sync.Mutex
 }
 
 func (w *SliceArgReaderWorker) Work(r tract.Request) (tract.Request, bool) {
@@ -86,7 +86,7 @@ func (w *SliceArgReaderWorker) Close() {}
 // safe, thus a mutex is being used.
 type SliceResultsWriterWorker struct {
 	results []float64
-	mutex   *sync.Mutex
+	mutex   sync.Mutex
 }
 
 func (w *SliceResultsWriterWorker) Work(r tract.Request) (tract.Request, bool) {
@@ -102,22 +102,17 @@ func (w *SliceResultsWriterWorker) Work(r tract.Request) (tract.Request, bool) {
 
 func (w *SliceResultsWriterWorker) Close() {}
 
-// Perpare a few number to be square rooted and do it using a tract!
+// Perpare a few numbers to be square rooted and do it using a tract!
 func ExampleTract_serialGroupTract() {
-	argumentReaderTract := tract.NewWorkerTract("argment reader", 1,
-		tract.NewFactoryFromWorker(&SliceArgReaderWorker{
-			mutex:     &sync.Mutex{},
-			arguments: []float64{0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100},
-		}),
-	)
-	squareRootTract := tract.NewWorkerTract("square root", 4, tract.NewFactoryFromWorker(SquareRootWorker{}))
-	resultsWorker := &SliceResultsWriterWorker{mutex: &sync.Mutex{}}
-	resultReaderTract := tract.NewWorkerTract("result reader", 1, tract.NewFactoryFromWorker(resultsWorker))
-
+	var resultsWorker SliceResultsWriterWorker
 	wholeTract := tract.NewSerialGroupTract("my tract",
-		argumentReaderTract,
-		squareRootTract,
-		resultReaderTract,
+		tract.NewWorkerTract("argment reader", 1,
+			tract.NewFactoryFromWorker(&SliceArgReaderWorker{
+				arguments: []float64{0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100},
+			}),
+		),
+		tract.NewWorkerTract("square root", 4, tract.NewFactoryFromWorker(SquareRootWorker{})),
+		tract.NewWorkerTract("result reader", 1, tract.NewFactoryFromWorker(&resultsWorker)),
 	)
 
 	err := wholeTract.Init()
@@ -128,9 +123,8 @@ func ExampleTract_serialGroupTract() {
 	wait := wholeTract.Start()
 	wait()
 
-	results := resultsWorker.results
-	sort.Sort(sort.Float64Slice(results))
-	for _, result := range results {
+	sort.Sort(sort.Float64Slice(resultsWorker.results))
+	for _, result := range resultsWorker.results {
 		fmt.Println(result)
 	}
 

@@ -23,9 +23,9 @@ func link(from, to Tract) {
 // NewSerialGroupTract makes a new tract that consists muliple other tracts.
 // This accomplishes the same thing as chaining other tracts together manually,
 // but has the benefit of being able to treat that chain of tracts as a single tract.
-//    -------------------------------------------
+//    ----------------------------------------------
 // -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
-//    -------------------------------------------
+//    ----------------------------------------------
 func NewSerialGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	Chain(tracts...)
@@ -84,12 +84,12 @@ func (p *serialGroupTract) SetOutput(out Output) {
 // NewParalellGroupTract makes a new tract that consists of muliple other tracts.
 // Each request this tract receives is routed to 1 of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
-//    -----------------
+//    ------------------
 //    | / ( Tract0 ) \ |
 // -> | - ( Tract1 ) - | ->
 //    | \ ( Tract2 ) / |
-//    |      ...      |
-//    -----------------
+//    |      ...       |
+//    ------------------
 func NewParalellGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	pTract := &paralellGroupTract{}
@@ -134,12 +134,12 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 // NewFanOutGroupTract makes a new tract that consists muliple other tracts.
 // Each request this tract receives is routed to all of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
-//    -----------------
+//    ------------------
 //    | / ( Tract0 ) \ |
 // -> | - ( Tract1 ) - | ->
 //    | \ ( Tract2 ) / |
-//    |      ...      |
-//    -----------------
+//    |      ...       |
+//    ------------------
 func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	fanOutTract := &fanOutTract{
