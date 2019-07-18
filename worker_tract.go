@@ -9,12 +9,13 @@ import (
 func NewWorkerTract(name string, size int, workerFactory WorkerFactory, options ...WorkerTractOption) Tract {
 	return &workerTract{
 		// input and output are overwritten when tracts are linked together
-		input:   InputGenerator{},
-		output:  FinalOutput{},
-		factory: workerFactory,
-		name:    name,
-		size:    size,
-		options: options,
+		input:              InputGenerator{},
+		output:             FinalOutput{},
+		factory:            workerFactory,
+		name:               name,
+		size:               size,
+		options:            options,
+		shouldCloseFactory: false,
 	}
 }
 
@@ -42,7 +43,8 @@ type workerTract struct {
 	// applyOptions() initialized fields
 
 	// Handler for request latency metrics within each running process in the tract
-	metricsHandler MetricsHandler
+	metricsHandler     MetricsHandler
+	shouldCloseFactory bool
 }
 
 func (p *workerTract) Name() string {
@@ -101,7 +103,9 @@ func (p *workerTract) applyOptions() {
 func (p *workerTract) close() {
 	p.closeWorkers()
 	p.output.Close()
-	p.factory.Close()
+	if p.shouldCloseFactory {
+		p.factory.Close()
+	}
 }
 
 func (p *workerTract) closeWorkers() {
@@ -140,7 +144,7 @@ func process(input Input, worker Worker, output Output, metricsHandler MetricsHa
 			cleanupRequest(outputRequest, false)
 			if isHeadTract {
 				// If this is the head tract, then the worker is responsible for termination.
-				// If the worker returns a "should not send" result, this is a signal to stop processing.
+				// If the worker returns a "should not send" result, this is the signal to stop processing.
 				break
 			}
 		}

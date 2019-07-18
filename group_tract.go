@@ -1,10 +1,20 @@
 package tract
 
-// Chain chains multiple Tracts together.
+import "errors"
+
+// ErrFanOutAsHead is en error returned when a fanout group doesn't have its
+// input set. Aka htere should be another Tract feeding into it.
+var ErrFanOutAsHead = errors.New("fan out tract detected with no set input")
+
+// ErrNoGroupMember is an error returned when a group tract doesn't have
+// enough members.
+var ErrNoGroupMember = errors.New("group tract detected with no inner tracts")
+
+// chain chains multiple Tracts together.
 // The result can collectively be viewed as a single larger tract.
 //
 // ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ...
-func Chain(tracts ...Tract) {
+func chain(tracts ...Tract) {
 	lastTract := len(tracts) - 1
 	for i := 0; i < lastTract; i++ {
 		link(tracts[i], tracts[i+1])
@@ -44,11 +54,14 @@ func (p *serialGroupTract) Name() string {
 }
 
 func (p *serialGroupTract) Init() error {
-	Chain(p.tracts...)
+	chain(p.tracts...)
 	return p.init()
 }
 
 func (p *serialGroupTract) init() error {
+	if len(p.tracts) == 0 {
+		return ErrNoGroupMember
+	}
 	var err error
 	for _, tract := range p.tracts {
 		err = tract.Init()
@@ -142,6 +155,8 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 // NewFanOutGroupTract makes a new tract that consists muliple other tracts.
 // Each request this tract receives is routed to all of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
+// This Tract should not be the first tract in a group as it has no machanism
+// of closing on it's own. Aka it's input must be set to something.
 //    ------------------
 //    | / ( Tract0 ) \ |
 // -> | - ( Tract1 ) - | ->
@@ -169,6 +184,12 @@ type fanOutGroupTract struct {
 }
 
 func (p *fanOutGroupTract) Init() error {
+	if _, weAreHeadTract := p.tracts[0].(*fanOutTract).input.(InputGenerator); weAreHeadTract {
+		return ErrFanOutAsHead
+	}
+	if len(p.tracts) <= 1 {
+		return ErrNoGroupMember
+	}
 	// Connect the fan out tract to all the other tracts.
 	for _, tract := range p.tracts[1:] {
 		link(p.tracts[0], tract)

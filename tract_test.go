@@ -61,7 +61,7 @@ func TestWorkerTract(t *testing.T) {
 				return r, true
 			},
 		},
-	})
+	}, tract.WithFactoryClosure(true))
 
 	// Pre-Init Checks
 	var (
@@ -169,7 +169,7 @@ func TestSerialGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 		tract.NewWorkerTract("tail", 2, testWorkerFactory{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
@@ -180,7 +180,7 @@ func TestSerialGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 	)
 
 	// Pre-Init Checks
@@ -277,7 +277,7 @@ func TestParalellGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 		tract.NewParalellGroupTract("myParalellGroupTract",
 			tract.NewWorkerTract("middle1", 1, testWorkerFactory{
 				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
@@ -289,7 +289,7 @@ func TestParalellGroupTract(t *testing.T) {
 						return r, true
 					},
 				},
-			}),
+			}, tract.WithFactoryClosure(true)),
 			tract.NewWorkerTract("middle2", 2, testWorkerFactory{
 				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
@@ -311,7 +311,7 @@ func TestParalellGroupTract(t *testing.T) {
 						return r, true
 					},
 				},
-			}),
+			}, tract.WithFactoryClosure(true)),
 		),
 		tract.NewWorkerTract("tail", 8, testWorkerFactory{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
@@ -323,7 +323,7 @@ func TestParalellGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 	)
 
 	// Pre-Init Checks
@@ -398,7 +398,7 @@ func TestParalellGroupTract(t *testing.T) {
 	expectedNumberOfParalellRequestsProcessed = 100
 	expectedNumberOfTailRequestsProcessed = 100
 	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 5
+	expectedNumberOfFactoriesClosed = 4
 	expectedNumberOfWorkersClosed = 16
 
 	totalNumberOfParalellRequestsProcessed = 0
@@ -446,7 +446,7 @@ func TestFanOutGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 		tract.NewFanOutGroupTract("myFanOutGroupTract",
 			tract.NewWorkerTract("middle1", 1, testWorkerFactory{
 				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
@@ -458,7 +458,7 @@ func TestFanOutGroupTract(t *testing.T) {
 						return r, true
 					},
 				},
-			}),
+			}, tract.WithFactoryClosure(true)),
 			tract.NewWorkerTract("middle2", 2, testWorkerFactory{
 				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
@@ -480,7 +480,7 @@ func TestFanOutGroupTract(t *testing.T) {
 						return r, true
 					},
 				},
-			}),
+			}, tract.WithFactoryClosure(true)),
 		),
 		tract.NewWorkerTract("tail", 8, testWorkerFactory{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
@@ -492,7 +492,7 @@ func TestFanOutGroupTract(t *testing.T) {
 					return r, true
 				},
 			},
-		}),
+		}, tract.WithFactoryClosure(true)),
 	)
 
 	// Pre-Init Checks
@@ -567,7 +567,7 @@ func TestFanOutGroupTract(t *testing.T) {
 	expectedNumberOfFanOutRequestsProcessed = 300
 	expectedNumberOfTailRequestsProcessed = 300
 	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 5
+	expectedNumberOfFactoriesClosed = 4
 	expectedNumberOfWorkersClosed = 16
 
 	totalNumberOfRequestsProcessed = 0
@@ -625,7 +625,7 @@ func TestTractWorker(t *testing.T) {
 						return r, true
 					},
 				},
-			}),
+			}, tract.WithFactoryClosure(true)),
 			tract.NewWorkerTract("tractWorker2", 1, testWorkerFactory{
 				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
@@ -799,7 +799,7 @@ func TestTractWorker(t *testing.T) {
 	// Pre-Final Cleanup Checks
 	expectedNumberOfRequestsProcessed = [2]int64{100, 100}
 	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 2
+	expectedNumberOfFactoriesClosed = 1
 	expectedNumberOfWorkersClosed = 5
 	expectedNumberOfRequestCleanups = [3]map[int]struct{}{
 		{
@@ -856,7 +856,7 @@ func TestTractWorker(t *testing.T) {
 	// Final Checks
 	expectedNumberOfRequestsProcessed = [2]int64{100, 100}
 	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 2
+	expectedNumberOfFactoriesClosed = 1
 	expectedNumberOfWorkersClosed = 5
 	expectedNumberOfRequestCleanups = [3]map[int]struct{}{
 		{
