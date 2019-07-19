@@ -15,28 +15,50 @@ var (
 
 type DatabaseResultsKey struct{}
 
-func NewDatabaseWorkerFactory(driverName, dataSourceName, query string, resultCount int) (tract.WorkerFactory, error) {
-	db, err := sql.Open(driverName, dataSourceName)
+func NewDatabaseWorkerFactory(
+	driverName1, dataSourceName1, query1 string, resultCount1 int,
+	driverName2, dataSourceName2, query2 string, resultCount2 int,
+) (tract.WorkerFactory, error) {
+	db, err := sql.Open(driverName1, dataSourceName1)
 	if err != nil {
 		return nil, err
 	}
 	return databaseWorkerFactory{
-		db:          db,
-		query:       query,
-		resultCount: resultCount,
+		db:                   db,
+		query1:               query1,
+		query2:               query2,
+		resultCount1:         resultCount1,
+		resultCount2:         resultCount2,
+		workerDriverName:     driverName2,
+		workerDataSourceName: dataSourceName2,
 	}, nil
 }
 
 type databaseWorkerFactory struct {
-	db          *sql.DB
-	query       string
-	resultCount int
+	db                                     *sql.DB
+	query1, query2                         string
+	resultCount1, resultCount2             int
+	workerDriverName, workerDataSourceName string
 }
 
 func (f databaseWorkerFactory) MakeWorker() (tract.Worker, error) {
+	db, err := sql.Open(f.workerDriverName, f.workerDataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]interface{}, f.resultCount1)
+	resultsPtrs := make([]interface{}, len(results))
+	for i := range results {
+		resultsPtrs[i] = &results[i]
+	}
 	return &databaseWorker{
-		db:    f.db,
-		query: f.query,
+		db:           f.db,
+		query1:       f.query1,
+		localDB:      db,
+		query2:       f.query2,
+		resultCount2: f.resultCount2,
+		results:      results,
+		resultsPtrs:  resultsPtrs,
 	}, nil
 }
 
@@ -46,18 +68,29 @@ func (f databaseWorkerFactory) Close() {
 
 type databaseWorker struct {
 	// resources from factory
-	db          *sql.DB
-	query       string
-	resultCount int
+	db           *sql.DB
+	query1       string
+	query2       string
+	resultCount2 int
+	// local resources
+	localDB              *sql.DB
+	results, resultsPtrs []interface{}
 }
 
 func (w *databaseWorker) Work(r tract.Request) (tract.Request, bool) {
-	results := make([]interface{}, w.resultCount)
+	err := w.db.QueryRow(w.query1).Scan(w.resultsPtrs...)
+	if err != nil {
+		// Handle error
+		return r, false
+	}
+
+	results := make([]interface{}, w.resultCount2)
 	resultsPtrs := make([]interface{}, len(results))
 	for i := range results {
 		resultsPtrs[i] = &results[i]
 	}
-	err := w.db.QueryRow(w.query).Scan(resultsPtrs...)
+
+	err = w.localDB.QueryRow(w.query2, w.results...).Scan(resultsPtrs...)
 	if err != nil {
 		// Handle error
 		return r, false
@@ -66,14 +99,14 @@ func (w *databaseWorker) Work(r tract.Request) (tract.Request, bool) {
 }
 
 func (w *databaseWorker) Close() {
-	// No resources for the worker to close.
-	// The database will be closed by the factory.
-	// If we closed it here, other workers made by the factory may try
-	// to query using a closed database connection.
+	w.localDB.Close()
 }
 
 func ExampleWorkerFactory() {
-	dbWorkerFactory, err := NewDatabaseWorkerFactory("mysql", "mydatabase.internal", "SELECT value1, value2 FROM myTable LIMIT 1;", 2)
+	dbWorkerFactory, err := NewDatabaseWorkerFactory(
+		"mysql", "mydatabase.internal", "SELECT value1, value2 FROM myTable1 LIMIT 1;", 2,
+		"mysql", "mydatabase.internal", "SELECT value1, value2, value3 FROM myTable2 WHERE value1 = ? AND value2 = ? LIMIT 1;", 3,
+	)
 	if err != nil {
 		// Handle error
 		return
