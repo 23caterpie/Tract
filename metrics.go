@@ -26,7 +26,7 @@ const (
 	MetricsKeyTract
 )
 
-// MetricsHandler handles metrics that different parts of a tract produce.
+// MetricsHandler handles metrics that a tract produces.
 type MetricsHandler interface {
 	// HandleMetrics is the method where all metrics are passed to for handling. It should compare the
 	// Key of each metric against the list of metric key constants to determine what each metric means.
@@ -58,7 +58,7 @@ type DefaultMetricsThrottler struct {
 
 // ShouldHandle determines when we should handle metrics based off a frequency
 //  Frequency |            ShouldHandle() logic
-// ---------------------------------------------
+//  --------------------------------------------
 //          0 |                   Always handle
 //        < 0 |                    Never handle
 //        > 0 | Handle once per frequency cycle

@@ -13,7 +13,7 @@ var ErrNoGroupMember = errors.New("group tract detected with no inner tracts")
 // chain chains multiple Tracts together.
 // The result can collectively be viewed as a single larger tract.
 //
-// ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ...
+//  ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ...
 func chain(tracts ...Tract) {
 	lastTract := len(tracts) - 1
 	for i := 0; i < lastTract; i++ {
@@ -33,9 +33,9 @@ func link(from, to Tract) {
 // NewSerialGroupTract makes a new tract that consists muliple other tracts.
 // This accomplishes the same thing as chaining other tracts together manually,
 // but has the benefit of being able to treat that chain of tracts as a single tract.
-//    ----------------------------------------------
-// -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
-//    ----------------------------------------------
+//     ----------------------------------------------
+//  -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
+//     ----------------------------------------------
 func NewSerialGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	return &serialGroupTract{
@@ -101,12 +101,12 @@ func (p *serialGroupTract) SetOutput(out Output) {
 // NewParalellGroupTract makes a new tract that consists of muliple other tracts.
 // Each request this tract receives is routed to 1 of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
-//    ------------------
-//    | / ( Tract0 ) \ |
-// -> | - ( Tract1 ) - | ->
-//    | \ ( Tract2 ) / |
-//    |      ...       |
-//    ------------------
+//     ------------------
+//     | / ( Tract0 ) \ |
+//  -> | - ( Tract1 ) - | ->
+//     | \ ( Tract2 ) / |
+//     |     ...        |
+//     ------------------
 func NewParalellGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	pTract := &paralellGroupTract{}
@@ -157,12 +157,12 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 // All requests proccessed by the inner tracts are routed to the same output.
 // This Tract should not be the first tract in a group as it has no machanism
 // of closing on it's own. Aka it's input must be set to something.
-//    ------------------
-//    | / ( Tract0 ) \ |
-// -> | - ( Tract1 ) - | ->
-//    | \ ( Tract2 ) / |
-//    |      ...       |
-//    ------------------
+//     ------------------
+//     | / ( Tract0 ) \ |
+//  -> | - ( Tract1 ) - | ->
+//     | \ ( Tract2 ) / |
+//     |     ...        |
+//     ------------------
 func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
 	tracts = append([]Tract{tract}, tracts...)
 	fanOutTract := &fanOutTract{

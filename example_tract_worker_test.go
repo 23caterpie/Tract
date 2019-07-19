@@ -8,7 +8,7 @@ import (
 	"git.dev.kochava.com/ccurrin/tract"
 )
 
-func ExampleWorkerFactory_tractWorkerFactory_sync() {
+func ExampleWorkerFactory_tractWorkerFactorySync() {
 	squareRootTract := tract.NewWorkerTract("square root", 4, tract.NewFactoryFromWorker(SquareRootWorker{}))
 
 	factory := tract.NewTractWorkerFactory(squareRootTract)
@@ -47,7 +47,7 @@ func ExampleWorkerFactory_tractWorkerFactory_sync() {
 	// 10
 }
 
-func ExampleWorkerFactory_tractWorkerFactory_async() {
+func ExampleWorkerFactory_tractWorkerFactoryAsync() {
 	squareRootTract := tract.NewWorkerTract("square root", 4, tract.NewFactoryFromWorker(SquareRootWorker{}))
 
 	factory := tract.NewTractWorkerFactory(squareRootTract)

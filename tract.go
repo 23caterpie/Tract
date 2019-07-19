@@ -16,33 +16,32 @@ var (
 // user implemented Tracts (user will generally just implement workers).
 //
 // A Tract lifecycle is as follows:
-// 1. myTract is constructed by one of the Tract contructors in this package.
-// 2. myTract is initialized by calling myTract.Init().
+//  1. myTract is constructed by one of the Tract contructors in this package.
+//  2. myTract is initialized by calling myTract.Init().
 //     * if Init() returns an error, it is not safe to proceed.
-// 3. myTract is started by calling myTract.Start().
-// 4. myTract is closed by calling the callback returned from Start().
-// 5. myTract can be used again by looping back to step 2 (by default).
+//  3. myTract is started by calling myTract.Start().
+//  4. myTract is closed by calling the callback returned from Start().
+//  5. myTract can be used again by looping back to step 2 (by default).
 //     * Init() -> Start()() -> Init() ...
 //
 // A tract will close when its input specifies there are no more requests to process:
-// 1. The base case first Tract is a Worker Tract. It's Worker can be viewed as the Request generator.
-//    When that Worker returns a "should not send" from Work(), there are no more Request, and the Tract will shutdown.
-// 2. The Tract's input has been manually set by the user. The user contols Tract shutdown using that input.
+//  1. The base case first Tract is a Worker Tract. It's Worker can be viewed as the Request generator.
+//     When that Worker returns a "should not send" from Work(), there are no more Request, and the Tract will shutdown.
+//  2. The Tract's input has been manually set by the user. The user contols Tract shutdown using that input.
 //
 // Usage:
+//  myTract := tract.NewXYZTract(...)
+//  err := myTract.Init()
+//  if err != nil {
+//      // Handle error
+//      return
+//  }
+//  waitForTract := myTract.Start()
+//  waitForTract()
 //
-// myTract := NewXYZTract(...)
-// err := myTract.Init()
-// if err != nil {
-//     // Handle error
-//     return
-// }
-// waitForTract := myTract.Start()
-// waitForTract()
-//
-// // Let's start again!
-// err = myTract.Init()
-// ...
+//  // Let's start again!
+//  err = myTract.Init()
+//  ...
 type Tract interface {
 	// Name of the Tract: used for logging and instrementation.
 	Name() string
