@@ -5,6 +5,11 @@ import "sync"
 // WorkerFactory makes potentially many Worker objects that may use resources managed by the factory.
 type WorkerFactory interface {
 	// MakeWorker makes a worker expected to run in a tract.
+	// This Worker contructor will be called once per worker needed for a Worker Tract.
+	// Any resources that a single worker will need (and not share with other Workers) should be
+	// instanciated here, and closed by the Worker's Close() method. Any resources the Workers will
+	// share should be instantiated in this WorkerFactory's Contructor and closed by its Close()
+	// method, or should be instaniated and closed in a higher scope.
 	MakeWorker() (Worker, error)
 	// Close closes factory resources
 	Close()
