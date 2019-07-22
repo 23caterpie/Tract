@@ -2,6 +2,7 @@ package tract
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -30,23 +31,41 @@ func (w testWorker) Work(r Request) (Request, bool) {
 func (w testWorker) Close() {}
 
 type testInput struct {
-	preGetFunc func()
+	preGetFunc      func()
+	preGetFuncMutex sync.Mutex
 	Input
 }
 
 func (i *testInput) Get() (Request, bool) {
+	i.preGetFuncMutex.Lock()
 	i.preGetFunc()
+	i.preGetFuncMutex.Unlock()
 	return i.Input.Get()
 }
 
+func (i *testInput) setPreGetFunc(f func()) {
+	i.preGetFuncMutex.Lock()
+	i.preGetFunc = f
+	i.preGetFuncMutex.Unlock()
+}
+
 type testOutput struct {
-	prePutFunc func()
+	prePutFunc      func()
+	prePutFuncMutex sync.Mutex
 	Output
 }
 
 func (o *testOutput) Put(r Request) {
+	o.prePutFuncMutex.Lock()
 	o.prePutFunc()
+	o.prePutFuncMutex.Unlock()
 	o.Output.Put(r)
+}
+
+func (o *testOutput) setPrePutFunc(f func()) {
+	o.prePutFuncMutex.Lock()
+	o.prePutFunc = f
+	o.prePutFuncMutex.Unlock()
 }
 
 // TestWithMetricsHandler is a rigid test that tests the metric handler in a worker tract.
@@ -88,7 +107,7 @@ func TestWithMetricsHandler(t *testing.T) {
 	}
 
 	now = func() time.Time { return time.Date(2019, time.July, 22, 0, 0, 0, 0, time.UTC) }
-	input.preGetFunc = func() { now = func() time.Time { return time.Date(2019, time.July, 22, 0, 0, 1, 0, time.UTC) } } // 1 second duration
+	input.setPreGetFunc(func() { now = func() time.Time { return time.Date(2019, time.July, 22, 0, 0, 1, 0, time.UTC) } }) // 1 second duration
 
 	waitOnTract := workerTract.Start()
 
@@ -107,7 +126,7 @@ func TestWithMetricsHandler(t *testing.T) {
 		t.Errorf("unexpected metric for tract input expected: %+#v, recieved: %+#v", expectedMetric, metric)
 	}
 
-	output.prePutFunc = func() { now = func() time.Time { return time.Date(2019, time.July, 22, 1, 0, 0, 0, time.UTC) } } // 59 minute duration
+	output.setPrePutFunc(func() { now = func() time.Time { return time.Date(2019, time.July, 22, 1, 0, 0, 0, time.UTC) } }) // 59 minute duration
 	<-outputChannel
 	metric = <-metricsChannel
 	expectedMetric = Metric{Key: MetricsKeyOut, Value: 59 * time.Minute}
@@ -115,7 +134,7 @@ func TestWithMetricsHandler(t *testing.T) {
 		t.Errorf("unexpected metric for tract input expected: %+#v, recieved: %+#v", expectedMetric, metric)
 	}
 
-	input.preGetFunc = func() { now = func() time.Time { return time.Date(2019, time.July, 23, 0, 0, 0, 0, time.UTC) } } // 23 hour duration
+	input.setPreGetFunc(func() { now = func() time.Time { return time.Date(2019, time.July, 23, 0, 0, 0, 0, time.UTC) } }) // 23 hour duration
 	close(inputChannel)
 	metric = <-metricsChannel
 	expectedMetric = Metric{Key: MetricsKeyIn, Value: 23 * time.Hour}
