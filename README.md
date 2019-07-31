@@ -16,11 +16,11 @@ being incurred facilitates quick performance debugging.
 
 # Tract Types
 There are different types of tracts:
-* [Worker Tract](#Worker-Tract)
+* [Worker Tract](#worker-tract)
 * Group Tracts
-  - [Serial Tract](#Serial-Tract)
-  - [Paralell Tract](#Paralell-Tract)
-  - [Fan Out Tract](#Fan-Out-Tract)
+  - [Serial Tract](#serial-tract)
+  - [Paralell Tract](#paralell-tract)
+  - [Fan Out Tract](#fan-out-tract)
 
 ## Worker Tract
 ![](./images/WorkerTract.png)
