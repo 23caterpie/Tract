@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
 var _ tract.MetricsHandler = &exampleMetricsHandler{}

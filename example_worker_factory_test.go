@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
 var (
