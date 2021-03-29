@@ -1,10 +1,10 @@
 package tract
 
 // Output specifies a way for a Tract pass requests along.
-type Output interface {
+type Output[T any] interface {
 	// Put outputs the the request.
 	// Should never be called once Close has been called.
-	Put(Request)
+	Put(*Request[T])
 	// Close closes the output. No more requests should be outputted.
 	// Put should not be called once Close has been called.
 	// If there is something on the other side of this output receiving
@@ -13,60 +13,60 @@ type Output interface {
 }
 
 var (
-	_ Output = OutputChannel(nil)
-	_ Output = FinalOutput{}
-	_ Output = nonCloseOutput{}
-	_ Output = MetricsOutput{}
+	_ Output[interface{}] = OutputChannel[interface{}](make(chan *Request[interface{}]))
+	_ Output[interface{}] = FinalOutput[interface{}]{}
+	_ Output[interface{}] = nonCloseOutput[interface{}]{}
+	_ Output[interface{}] = MetricsOutput[interface{}]{}
 )
 
 // OutputChannel is a channel of requests.
-type OutputChannel chan<- Request
+type OutputChannel[T any] chan<- *Request[T]
 
 // Put puts the request onto the channel.
-func (c OutputChannel) Put(r Request) {
+func (c OutputChannel[T]) Put(r *Request[T]) {
 	c <- r
 }
 
 // Close closes the channel.
-func (c OutputChannel) Close() {
+func (c OutputChannel[T]) Close() {
 	close(c)
 }
 
 // FinalOutput is the last output for requests.
 // Requests that are outputted here have reached the end of their life.
 // It is the default output of a Tract.
-type FinalOutput struct{}
+type FinalOutput[T any] struct{}
 
 // Put sinks the request (noop).
-func (c FinalOutput) Put(r Request) {
+func (c FinalOutput[T]) Put(r *Request[T]) {
 	cleanupRequest(r, true)
 }
 
 // Close is a noop.
-func (c FinalOutput) Close() {}
+func (c FinalOutput[T]) Close() {}
 
 // nonCloseOutput is an Output wrapper that turns the `Close()` method to a noop.
 // Used in group tracts that can possibly fan request into an output, thus requiring
 // the group tract to handling closing for all inner tracts.
-type nonCloseOutput struct {
-	Output
+type nonCloseOutput[T any] struct {
+	Output[T]
 }
 
-func (c nonCloseOutput) Close() {}
+func (c nonCloseOutput[T]) Close() {}
 
 // MetricsOutput is a wrapper around an Output that will automatically generate output latency metrics
-type MetricsOutput struct {
-	Output
+type MetricsOutput[T any] struct {
+	Output[T]
 	metricsHandler MetricsHandler
 }
 
 // Put outputs to the inner output while gathering metrics.
-func (o MetricsOutput) Put(r Request) {
+func (o MetricsOutput[T]) Put(r *Request[T]) {
 	if o.metricsHandler != nil && o.metricsHandler.ShouldHandle() {
 		before := now()
 		o.Output.Put(r)
 		after := now()
-		if _, ok := o.Output.(FinalOutput); ok {
+		if _, ok := o.Output.(FinalOutput[T]); ok {
 			o.metricsHandler.HandleMetrics(
 				Metric{MetricsKeyOut, after.Sub(before)},
 				Metric{MetricsKeyTract, after.Sub(GetRequestStartTime(r))},

@@ -14,7 +14,7 @@ var ErrNoGroupMember = errors.New("group tract detected with no inner tracts")
 // The result can collectively be viewed as a single larger tract.
 //
 //  ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ...
-func chain(tracts ...Tract) {
+func chain[T any](tracts ...Tract[T]) {
 	lastTract := len(tracts) - 1
 	for i := 0; i < lastTract; i++ {
 		link(tracts[i], tracts[i+1])
@@ -24,10 +24,10 @@ func chain(tracts ...Tract) {
 // link links 2 Tracts together.
 //
 // ( fromTract ) -> ( toTract )
-func link(from, to Tract) {
-	link := make(chan Request)
-	from.SetOutput(OutputChannel(link))
-	to.SetInput(InputChannel(link))
+func link[T any](from, to Tract[T]) {
+	link := make(chan *Request[T])
+	from.SetOutput(OutputChannel[T](link))
+	to.SetInput(InputChannel[T](link))
 }
 
 // NewSerialGroupTract makes a new tract that consists muliple other tracts.
@@ -36,29 +36,29 @@ func link(from, to Tract) {
 //     ----------------------------------------------
 //  -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
 //     ----------------------------------------------
-func NewSerialGroupTract(name string, tract Tract, tracts ...Tract) Tract {
-	tracts = append([]Tract{tract}, tracts...)
-	return &serialGroupTract{
+func NewSerialGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
+	tracts = append([]Tract[T]{tract}, tracts...)
+	return &serialGroupTract[T]{
 		name:   name,
 		tracts: tracts,
 	}
 }
 
-type serialGroupTract struct {
+type serialGroupTract[T any] struct {
 	name   string
-	tracts []Tract
+	tracts []Tract[T]
 }
 
-func (p *serialGroupTract) Name() string {
+func (p *serialGroupTract[T]) Name() string {
 	return p.name
 }
 
-func (p *serialGroupTract) Init() error {
+func (p *serialGroupTract[T]) Init() error {
 	chain(p.tracts...)
 	return p.init()
 }
 
-func (p *serialGroupTract) init() error {
+func (p *serialGroupTract[T]) init() error {
 	if len(p.tracts) == 0 {
 		return ErrNoGroupMember
 	}
@@ -72,7 +72,7 @@ func (p *serialGroupTract) init() error {
 	return nil
 }
 
-func (p *serialGroupTract) Start() func() {
+func (p *serialGroupTract[T]) Start() func() {
 	callbacks := []func(){}
 	for i := len(p.tracts) - 1; i >= 0; i-- {
 		callbacks = append(callbacks, p.tracts[i].Start())
@@ -84,14 +84,14 @@ func (p *serialGroupTract) Start() func() {
 	}
 }
 
-func (p *serialGroupTract) SetInput(in Input) {
+func (p *serialGroupTract[T]) SetInput(in Input[T]) {
 	if len(p.tracts) == 0 {
 		return
 	}
 	p.tracts[0].SetInput(in)
 }
 
-func (p *serialGroupTract) SetOutput(out Output) {
+func (p *serialGroupTract[T]) SetOutput(out Output[T]) {
 	if len(p.tracts) == 0 {
 		return
 	}
@@ -107,25 +107,25 @@ func (p *serialGroupTract) SetOutput(out Output) {
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewParalellGroupTract(name string, tract Tract, tracts ...Tract) Tract {
-	tracts = append([]Tract{tract}, tracts...)
-	pTract := &paralellGroupTract{}
+func NewParalellGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
+	tracts = append([]Tract[T]{tract}, tracts...)
+	pTract := &paralellGroupTract[T]{}
 	pTract.name = name
 	pTract.tracts = tracts
-	pTract.output = FinalOutput{}
+	pTract.output = FinalOutput[T]{}
 	return pTract
 }
 
-type paralellGroupTract struct {
-	serialGroupTract
-	output Output
+type paralellGroupTract[T any] struct {
+	serialGroupTract[T]
+	output Output[T]
 }
 
-func (p *paralellGroupTract) Init() error {
+func (p *paralellGroupTract[T]) Init() error {
 	return p.init()
 }
 
-func (p *paralellGroupTract) Start() func() {
+func (p *paralellGroupTract[T]) Start() func() {
 	wait := p.serialGroupTract.Start()
 	return func() {
 		wait()
@@ -133,7 +133,7 @@ func (p *paralellGroupTract) Start() func() {
 	}
 }
 
-func (p *paralellGroupTract) SetInput(in Input) {
+func (p *paralellGroupTract[T]) SetInput(in Input[T]) {
 	if len(p.tracts) == 0 {
 		return
 	}
@@ -142,12 +142,12 @@ func (p *paralellGroupTract) SetInput(in Input) {
 	}
 }
 
-func (p *paralellGroupTract) SetOutput(out Output) {
+func (p *paralellGroupTract[T]) SetOutput(out Output[T]) {
 	if len(p.tracts) == 0 {
 		return
 	}
 	for _, tract := range p.tracts {
-		tract.SetOutput(nonCloseOutput{Output: out})
+		tract.SetOutput(nonCloseOutput[T]{Output: out})
 	}
 	p.output = out
 }
@@ -163,28 +163,28 @@ func (p *paralellGroupTract) SetOutput(out Output) {
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewFanOutGroupTract(name string, tract Tract, tracts ...Tract) Tract {
-	tracts = append([]Tract{tract}, tracts...)
-	fanOutTract := &fanOutTract{
-		input: InputGenerator{},
+func NewFanOutGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
+	tracts = append([]Tract[T]{tract}, tracts...)
+	fanOutTract := &fanOutTract[T]{
+		input: InputGenerator[T]{},
 	}
-	fTract := &fanOutGroupTract{}
+	fTract := &fanOutGroupTract[T]{}
 	fTract.name = name
 	fTract.tracts = append(
-		[]Tract{fanOutTract},
+		[]Tract[T]{fanOutTract},
 		tracts...,
 	)
-	fTract.output = FinalOutput{}
+	fTract.output = FinalOutput[T]{}
 	return fTract
 }
 
-type fanOutGroupTract struct {
-	serialGroupTract
-	output Output
+type fanOutGroupTract[T any] struct {
+	serialGroupTract[T]
+	output Output[T]
 }
 
-func (p *fanOutGroupTract) Init() error {
-	if _, weAreHeadTract := p.tracts[0].(*fanOutTract).input.(InputGenerator); weAreHeadTract {
+func (p *fanOutGroupTract[T]) Init() error {
+	if _, weAreHeadTract := p.tracts[0].(*fanOutTract[T]).input.(InputGenerator[T]); weAreHeadTract {
 		return ErrFanOutAsHead
 	}
 	if len(p.tracts) <= 1 {
@@ -197,7 +197,7 @@ func (p *fanOutGroupTract) Init() error {
 	return p.init()
 }
 
-func (p *fanOutGroupTract) Start() func() {
+func (p *fanOutGroupTract[T]) Start() func() {
 	wait := p.serialGroupTract.Start()
 	return func() {
 		wait()
@@ -205,13 +205,13 @@ func (p *fanOutGroupTract) Start() func() {
 	}
 }
 
-func (p *fanOutGroupTract) SetOutput(out Output) {
+func (p *fanOutGroupTract[T]) SetOutput(out Output[T]) {
 	// The first tract is always the fanOutTract, which should not be included in the true list of inner tracts the user knows/cares about.
 	if len(p.tracts) <= 1 {
 		return
 	}
 	for _, tract := range p.tracts[1:] {
-		tract.SetOutput(nonCloseOutput{Output: out})
+		tract.SetOutput(nonCloseOutput[T]{Output: out})
 	}
 	p.output = out
 }

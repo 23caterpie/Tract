@@ -2,20 +2,20 @@ package tract
 
 import "sync"
 
-type fanOutTract struct {
-	input   Input
-	outputs []Output
+type fanOutTract[T any] struct {
+	input   Input[T]
+	outputs []Output[T]
 }
 
-func (p *fanOutTract) Name() string {
+func (p *fanOutTract[T]) Name() string {
 	return "fanout"
 }
 
-func (p *fanOutTract) Init() error {
+func (p *fanOutTract[T]) Init() error {
 	return nil
 }
 
-func (p *fanOutTract) Start() func() {
+func (p *fanOutTract[T]) Start() func() {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -39,12 +39,12 @@ func (p *fanOutTract) Start() func() {
 	}
 }
 
-func (p *fanOutTract) SetInput(in Input) {
+func (p *fanOutTract[T]) SetInput(in Input[T]) {
 	p.input = in
 }
 
 // fanOutTract is never available directly externally. It's outputs are only set internally,
 // so this implementation of ever growing number of outputs is not liable to growing out of control.
-func (p *fanOutTract) SetOutput(out Output) {
+func (p *fanOutTract[T]) SetOutput(out Output[T]) {
 	p.outputs = append(p.outputs, out)
 }
