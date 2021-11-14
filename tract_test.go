@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
 var _ tract.WorkerFactory = testWorkerFactory{}

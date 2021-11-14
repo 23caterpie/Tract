@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
 func ExampleWorkerFactory_tractWorkerFactorySync() {

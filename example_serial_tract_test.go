@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
 // SquareRootWorkerArg is the key on the tract Request where our square root worker will look for its argument for its work
