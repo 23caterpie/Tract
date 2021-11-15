@@ -1,11 +1,11 @@
 package tract
 
 var (
-	_ Tract = &workerTract{}
-	_ Tract = &serialGroupTract{}
-	_ Tract = &paralellGroupTract{}
-	_ Tract = &fanOutGroupTract{}
-	_ Tract = &fanOutTract{}
+	_ Tract[int64] = &workerTract[int64]{}
+	_ Tract[int64] = &serialGroupTract[int64]{}
+	_ Tract[int64] = &paralellGroupTract[int64]{}
+	_ Tract[int64] = &fanOutGroupTract[int64]{}
+	_ Tract[int64] = &fanOutTract[int64]{}
 )
 
 // Tract is a highly concurrent, scalable design pattern.
@@ -42,7 +42,7 @@ var (
 //  // Let's start again!
 //  err = myTract.Init()
 //  ...
-type Tract interface {
+type Tract[T any] interface {
 	// Name of the Tract: used for logging and instrementation.
 	Name() string
 	// Init initializes the Tract. Must be called before calling Start().
@@ -55,10 +55,10 @@ type Tract interface {
 	// Users should generally use group Tracts instead of using SetInput directly.
 	// Tracts used as sub-tracts in a tract group will have thier inputs set by the group's Init()
 	// in which case the groups SetInput should be used instead.
-	SetInput(Input)
+	SetInput(Input[T])
 	// SetOutput sets the output of the tract.
 	// Users should generally use group Tracts instead of using SetOutput directly.
 	// Tracts used as sub-tracts in a tract group will have thier outputs set by the group's Init()
 	// in which case the groups SetOutput should be used instead.
-	SetOutput(Output)
+	SetOutput(Output[T])
 }

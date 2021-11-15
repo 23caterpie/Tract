@@ -1,7 +1,6 @@
 package tract
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -19,50 +18,50 @@ func (h testMetricHandler) HandleMetrics(metrics ...Metric) {
 
 func (h testMetricHandler) ShouldHandle() bool { return true }
 
-type testWorker struct {
+type testWorker[T any] struct {
 	newTime time.Time
-	work    func(r Request) (Request, bool)
+	work    func(r Request[T]) (Request[T], bool)
 }
 
-func (w testWorker) Work(r Request) (Request, bool) {
+func (w testWorker[T]) Work(r Request[T]) (Request[T], bool) {
 	return w.work(r)
 }
 
-func (w testWorker) Close() {}
+func (w testWorker[_]) Close() {}
 
-type testInput struct {
+type testInput[T any] struct {
 	preGetFunc      func()
 	preGetFuncMutex sync.Mutex
-	Input
+	Input[T]
 }
 
-func (i *testInput) Get() (Request, bool) {
+func (i *testInput[T]) Get() (Request[T], bool) {
 	i.preGetFuncMutex.Lock()
 	i.preGetFunc()
 	i.preGetFuncMutex.Unlock()
 	return i.Input.Get()
 }
 
-func (i *testInput) setPreGetFunc(f func()) {
+func (i *testInput[_]) setPreGetFunc(f func()) {
 	i.preGetFuncMutex.Lock()
 	i.preGetFunc = f
 	i.preGetFuncMutex.Unlock()
 }
 
-type testOutput struct {
+type testOutput[T any] struct {
 	prePutFunc      func()
 	prePutFuncMutex sync.Mutex
-	Output
+	Output[T]
 }
 
-func (o *testOutput) Put(r Request) {
+func (o *testOutput[T]) Put(r Request[T]) {
 	o.prePutFuncMutex.Lock()
 	o.prePutFunc()
 	o.prePutFuncMutex.Unlock()
 	o.Output.Put(r)
 }
 
-func (o *testOutput) setPrePutFunc(f func()) {
+func (o *testOutput[_]) setPrePutFunc(f func()) {
 	o.prePutFuncMutex.Lock()
 	o.prePutFunc = f
 	o.prePutFuncMutex.Unlock()
@@ -74,30 +73,31 @@ func TestWithMetricsHandler(t *testing.T) {
 	workerWaiterChannel := make(chan struct{})
 	workerNewTime := new(time.Time)
 	metricsChannel := make(chan Metric)
+	type myRequestType struct{}
 	workerTract := NewWorkerTract("waiter", 1,
-		NewFactoryFromWorker(testWorker{
-			work: func(r Request) (Request, bool) {
+		NewFactoryFromWorker[myRequestType](testWorker[myRequestType]{
+			work: func(r Request[myRequestType]) (Request[myRequestType], bool) {
 				<-workerWaiterChannel
 				now = func() time.Time { return *workerNewTime }
 				return r, true
 			},
 		}),
-		WithFactoryClosure(true),
-		WithMetricsHandler(testMetricHandler{
+		WithFactoryClosure[myRequestType](true),
+		WithMetricsHandler[myRequestType](testMetricHandler{
 			metricsChannel: metricsChannel,
 		}),
 	)
 
-	inputChannel := make(chan Request)
-	input := &testInput{
+	inputChannel := make(chan Request[myRequestType])
+	input := &testInput[myRequestType]{
 		preGetFunc: func() {},
-		Input:      InputChannel(inputChannel),
+		Input:      InputChannel[myRequestType](inputChannel),
 	}
 	workerTract.SetInput(input)
-	outputChannel := make(chan Request)
-	output := &testOutput{
+	outputChannel := make(chan Request[myRequestType])
+	output := &testOutput[myRequestType]{
 		prePutFunc: func() {},
-		Output:     OutputChannel(outputChannel),
+		Output:     OutputChannel[myRequestType](outputChannel),
 	}
 	workerTract.SetOutput(output)
 
@@ -111,7 +111,7 @@ func TestWithMetricsHandler(t *testing.T) {
 
 	waitOnTract := workerTract.Start()
 
-	inputChannel <- context.Background()
+	inputChannel <- Request[myRequestType]{}
 	metric := <-metricsChannel
 	expectedMetric := Metric{Key: MetricsKeyIn, Value: 1 * time.Second}
 	if metric != expectedMetric {

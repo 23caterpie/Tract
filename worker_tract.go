@@ -6,11 +6,11 @@ import (
 
 // NewWorkerTract makes a new tract that will spin up @size number of workers generated from @workerFactory
 // that get from the input and put to the output of the tract.
-func NewWorkerTract(name string, size int, workerFactory WorkerFactory, options ...WorkerTractOption) Tract {
-	return &workerTract{
+func NewWorkerTract[T any](name string, size int, workerFactory WorkerFactory[T], options ...WorkerTractOption[T]) Tract[T] {
+	return &workerTract[T]{
 		// input and output are overwritten when tracts are linked together
-		input:              InputGenerator{},
-		output:             FinalOutput{},
+		input:              InputGenerator[T]{},
+		output:             FinalOutput[T]{},
 		factory:            workerFactory,
 		name:               name,
 		size:               size,
@@ -19,26 +19,26 @@ func NewWorkerTract(name string, size int, workerFactory WorkerFactory, options 
 	}
 }
 
-type workerTract struct {
+type workerTract[T any] struct {
 	// NewWorkerTract() contructor initilized fields
 
 	// Input used by all workers
-	input Input
+	input Input[T]
 	// Output used by all workers
-	output Output
+	output Output[T]
 	// Factory that makes the workers on demand
-	factory WorkerFactory
+	factory WorkerFactory[T]
 	// Name of the Tract: used for logging and instrementation
 	name string
 	// Amount of workers to start
 	size int
 	// Additonal options applied to the tract on startup
-	options []WorkerTractOption
+	options []WorkerTractOption[T]
 
 	// init() initialized fields
 
 	// Workers
-	workers []Worker
+	workers []Worker[T]
 
 	// applyOptions() initialized fields
 
@@ -47,15 +47,15 @@ type workerTract struct {
 	shouldCloseFactory bool
 }
 
-func (p *workerTract) Name() string {
+func (p *workerTract[_]) Name() string {
 	return p.name
 }
 
-func (p *workerTract) Init() error {
+func (p *workerTract[T]) Init() error {
 	// Close the workers just in case init was called multiple times
 	p.closeWorkers()
 	// Make all the  workers
-	p.workers = make([]Worker, p.size)
+	p.workers = make([]Worker[T], p.size)
 	var err error
 	for i := range p.workers {
 		p.workers[i], err = p.factory.MakeWorker()
@@ -67,13 +67,13 @@ func (p *workerTract) Init() error {
 	return nil
 }
 
-func (p *workerTract) Start() func() {
+func (p *workerTract[T]) Start() func() {
 	p.applyOptions()
 	// Start all the processors
 	workerWG := &sync.WaitGroup{}
 	for i := range p.workers {
 		workerWG.Add(1)
-		go func(worker Worker) {
+		go func(worker Worker[T]) {
 			defer workerWG.Done()
 			process(p.input, worker, p.output, p.metricsHandler)
 		}(p.workers[i])
@@ -85,22 +85,22 @@ func (p *workerTract) Start() func() {
 	}
 }
 
-func (p *workerTract) SetInput(in Input) {
+func (p *workerTract[T]) SetInput(in Input[T]) {
 	p.input = in
 }
 
-func (p *workerTract) SetOutput(out Output) {
+func (p *workerTract[T]) SetOutput(out Output[T]) {
 	p.output = out
 }
 
 // This is called upon starting the tract; ensuring any changes to input or output has taken place before being called.
-func (p *workerTract) applyOptions() {
+func (p *workerTract[_]) applyOptions() {
 	for _, option := range p.options {
 		option(p)
 	}
 }
 
-func (p *workerTract) close() {
+func (p *workerTract[_]) close() {
 	p.closeWorkers()
 	p.output.Close()
 	if p.shouldCloseFactory {
@@ -108,7 +108,7 @@ func (p *workerTract) close() {
 	}
 }
 
-func (p *workerTract) closeWorkers() {
+func (p *workerTract[_]) closeWorkers() {
 	for i := range p.workers {
 		if worker := p.workers[i]; worker != nil {
 			worker.Close()
@@ -116,20 +116,20 @@ func (p *workerTract) closeWorkers() {
 	}
 }
 
-func process(input Input, worker Worker, output Output, metricsHandler MetricsHandler) {
+func process[T any](input Input[T], worker Worker[T], output Output[T], metricsHandler MetricsHandler) {
 	var (
 		mh  = &manualOverrideMetricsHandler{MetricsHandler: metricsHandler}
-		in  = MetricsInput{Input: input, metricsHandler: mh}
-		w   = MetricsWorker{Worker: worker, metricsHandler: mh}
-		out = MetricsOutput{Output: output, metricsHandler: mh}
+		in  = MetricsInput[T]{Input: input, metricsHandler: mh}
+		w   = MetricsWorker[T]{Worker: worker, metricsHandler: mh}
+		out = MetricsOutput[T]{Output: output, metricsHandler: mh}
 
-		outputRequest Request
+		outputRequest Request[T]
 		shouldSend    bool
 
-		inputRequest Request
+		inputRequest Request[T]
 		ok           bool
 
-		_, isHeadTract = input.(InputGenerator)
+		_, isHeadTract = input.(InputGenerator[T])
 	)
 	for {
 		mh.SetShouldHandle(metricsHandler != nil && metricsHandler.ShouldHandle())

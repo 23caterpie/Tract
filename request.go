@@ -7,7 +7,24 @@ import (
 
 // Request is the object that is passed along the tract.
 // It keeps track of state by storing data via context values
-type Request context.Context
+type Request[T any] struct {
+	ctx  context.Context
+	Data T
+}
+
+func (r Request[_]) Context() context.Context {
+	if r.ctx == nil {
+		return context.Background()
+	}
+	return r.ctx
+}
+
+func (r *Request[_]) WithContext(ctx context.Context) {
+	if ctx == nil {
+		panic("nil context")
+	}
+	r.ctx = ctx
+}
 
 // requestTimeStart is the key to retreive the generation time from a request.
 // Request value type is time.Time
@@ -15,52 +32,55 @@ type requestTimeStartKey struct{}
 
 // GetRequestStartTime get the time the request was generated.
 // If there is no start time, the zero value of time.Time is returned.
-func GetRequestStartTime(r Request) time.Time {
-	startTime, _ := r.Value(requestTimeStartKey{}).(time.Time)
+func GetRequestStartTime[T any](r Request[T]) time.Time {
+	startTime, _ := r.Context().Value(requestTimeStartKey{}).(time.Time)
 	return startTime
 }
 
-func setRequestStartTime(r Request, t time.Time) Request {
-	return context.WithValue(r, requestTimeStartKey{}, t)
+func setRequestStartTime[T any](r *Request[T], t time.Time) {
+	r.WithContext(context.WithValue(r.Context(), requestTimeStartKey{}, t))
 }
 
 // Request value type is cleanups
 type cleanupKey struct{}
-type cleanups []func(r Request, success bool)
+type cleanups[T any] []func(r Request[T], success bool)
 
 // AddRequestCleanup add a function to the request that will be run when the request dies.
 // This happens either when it reaches the end of a pool with no user set output, or a worker
 // specified that the request should no longer continue.
-func AddRequestCleanup(r Request, f func(Request, bool)) Request {
+func AddRequestCleanup[T any](r *Request[T], f func(Request[T], bool)) {
 	if f == nil {
-		return r
+		return
 	}
-	cleanupFuncs, _ := r.Value(cleanupKey{}).(cleanups)
+	ctx := r.Context()
+	cleanupFuncs, _ := ctx.Value(cleanupKey{}).(cleanups[T])
 	cleanupFuncs = append(cleanupFuncs, f)
-	return context.WithValue(r, cleanupKey{}, cleanupFuncs)
+	r.WithContext(context.WithValue(ctx, cleanupKey{}, cleanupFuncs))
 }
 
 // RemoveAllRequestCleanups removes all of the cleanups attached to the request.
 // This does not run the cleanups.
-func RemoveAllRequestCleanups(r Request) Request {
-	return context.WithValue(r, cleanupKey{}, nil)
+func RemoveAllRequestCleanups[T any](r *Request[T]) {
+	r.WithContext(context.WithValue(r.Context(), cleanupKey{}, nil))
 }
 
 // CleanupRequest manually calls all the cleanup functions attached to the request.
 // This does not remove the cleanups.
-func CleanupRequest(r Request, success bool) {
+func CleanupRequest[T any](r Request[T], success bool) {
 	cleanupRequest(r, success)
 }
 
-func cleanupRequest(r Request, success bool) {
-	cleanupFuncs, _ := r.Value(cleanupKey{}).(cleanups)
+func cleanupRequest[T any](r Request[T], success bool) {
+	cleanupFuncs, _ := r.Context().Value(cleanupKey{}).(cleanups[T])
 	for _, f := range cleanupFuncs {
 		f(r, success)
 	}
 }
 
 // swapCleanups sets the request cleanup ot be the provided cleanup, and retunrs the old cleanup.
-func swapCleanups(r Request, cleanupFuncs cleanups) (Request, cleanups) {
-	oldCleaupFuncs, _ := r.Value(cleanupKey{}).(cleanups)
-	return context.WithValue(r, cleanupKey{}, cleanupFuncs), oldCleaupFuncs
+func swapCleanups[T any](r *Request[T], cleanupFuncs cleanups[T]) cleanups[T] {
+	ctx := r.Context()
+	oldCleaupFuncs, _ := ctx.Value(cleanupKey{}).(cleanups[T])
+	r.WithContext(context.WithValue(ctx, cleanupKey{}, cleanupFuncs))
+	return oldCleaupFuncs
 }
