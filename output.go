@@ -4,7 +4,7 @@ package tract
 type Output[T any] interface {
 	// Put outputs the the request.
 	// Should never be called once Close has been called.
-	Put(Request[T])
+	Put(*Request[T])
 	// Close closes the output. No more requests should be outputted.
 	// Put should not be called once Close has been called.
 	// If there is something on the other side of this output receiving
@@ -16,14 +16,13 @@ var (
 	_ Output[int64] = OutputChannel[int64](nil)
 	_ Output[int64] = FinalOutput[int64]{}
 	_ Output[int64] = nonCloseOutput[int64]{}
-	_ Output[int64] = MetricsOutput[int64]{}
 )
 
 // OutputChannel is a channel of requests.
-type OutputChannel[T any] chan<- Request[T]
+type OutputChannel[T any] chan<- *Request[T]
 
 // Put puts the request onto the channel.
-func (c OutputChannel[T]) Put(r Request[T]) {
+func (c OutputChannel[T]) Put(r *Request[T]) {
 	c <- r
 }
 
@@ -38,9 +37,7 @@ func (c OutputChannel[_]) Close() {
 type FinalOutput[T any] struct{}
 
 // Put sinks the request (noop).
-func (c FinalOutput[T]) Put(r Request[T]) {
-	cleanupRequest(r, true)
-}
+func (c FinalOutput[T]) Put(r *Request[T]) {}
 
 // Close is a noop.
 func (c FinalOutput[_]) Close() {}
@@ -53,30 +50,3 @@ type nonCloseOutput[T any] struct {
 }
 
 func (c nonCloseOutput[_]) Close() {}
-
-// MetricsOutput is a wrapper around an Output that will automatically generate output latency metrics
-type MetricsOutput[T any] struct {
-	Output[T]
-	metricsHandler MetricsHandler
-}
-
-// Put outputs to the inner output while gathering metrics.
-func (o MetricsOutput[T]) Put(r Request[T]) {
-	if o.metricsHandler != nil && o.metricsHandler.ShouldHandle() {
-		before := now()
-		o.Output.Put(r)
-		after := now()
-		if _, ok := o.Output.(FinalOutput[T]); ok {
-			o.metricsHandler.HandleMetrics(
-				Metric{MetricsKeyOut, after.Sub(before)},
-				Metric{MetricsKeyTract, after.Sub(GetRequestStartTime(r))},
-			)
-		} else {
-			o.metricsHandler.HandleMetrics(
-				Metric{MetricsKeyOut, after.Sub(before)},
-			)
-		}
-	} else {
-		o.Output.Put(r)
-	}
-}

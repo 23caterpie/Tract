@@ -42,8 +42,6 @@ type workerTract[T any] struct {
 
 	// applyOptions() initialized fields
 
-	// Handler for request latency metrics within each running process in the tract
-	metricsHandler     MetricsHandler
 	shouldCloseFactory bool
 }
 
@@ -75,7 +73,7 @@ func (p *workerTract[T]) Start() func() {
 		workerWG.Add(1)
 		go func(worker Worker[T]) {
 			defer workerWG.Done()
-			process(p.input, worker, p.output, p.metricsHandler)
+			process(p.input, worker, p.output)
 		}(p.workers[i])
 	}
 	// Automatically close all the workers, the factory, and the output when all the workers finish.
@@ -116,32 +114,25 @@ func (p *workerTract[_]) closeWorkers() {
 	}
 }
 
-func process[T any](input Input[T], worker Worker[T], output Output[T], metricsHandler MetricsHandler) {
+func process[T any](input Input[T], worker Worker[T], output Output[T]) {
 	var (
-		mh  = &manualOverrideMetricsHandler{MetricsHandler: metricsHandler}
-		in  = MetricsInput[T]{Input: input, metricsHandler: mh}
-		w   = MetricsWorker[T]{Worker: worker, metricsHandler: mh}
-		out = MetricsOutput[T]{Output: output, metricsHandler: mh}
-
-		outputRequest Request[T]
+		outputRequest *Request[T]
 		shouldSend    bool
 
-		inputRequest Request[T]
+		inputRequest *Request[T]
 		ok           bool
 
 		_, isHeadTract = input.(InputGenerator[T])
 	)
 	for {
-		mh.SetShouldHandle(metricsHandler != nil && metricsHandler.ShouldHandle())
-		inputRequest, ok = in.Get()
+		inputRequest, ok = input.Get()
 		if !ok {
 			break
 		}
-		outputRequest, shouldSend = w.Work(inputRequest)
+		outputRequest, shouldSend = worker.Work(inputRequest)
 		if shouldSend {
-			out.Put(outputRequest)
+			output.Put(outputRequest)
 		} else {
-			cleanupRequest(outputRequest, false)
 			if isHeadTract {
 				// If this is the head tract, then the worker is responsible for termination.
 				// If the worker returns a "should not send" result, this is the signal to stop processing.

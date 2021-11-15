@@ -25,7 +25,7 @@ func chain[T any](tracts ...Tract[T]) {
 //
 // ( fromTract ) -> ( toTract )
 func link[T any](from, to Tract[T]) {
-	linkChannel := make(chan Request[T])
+	linkChannel := make(chan *Request[T])
 	from.SetOutput(OutputChannel[T](linkChannel))
 	to.SetInput(InputChannel[T](linkChannel))
 }

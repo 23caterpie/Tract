@@ -1,7 +1,6 @@
 package tract_test
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 
@@ -9,16 +8,18 @@ import (
 )
 
 var (
-	_ tract.WorkerFactory = databaseWorkerFactory{}
-	_ tract.Worker        = &databaseWorker{}
+	_ tract.WorkerFactory[DatabaseResultsRequest] = databaseWorkerFactory{}
+	_ tract.Worker[DatabaseResultsRequest]        = &databaseWorker{}
 )
 
-type DatabaseResultsKey struct{}
+type DatabaseResultsRequest struct {
+	results []interface{}
+}
 
 func NewDatabaseWorkerFactory(
 	driverName1, dataSourceName1, query1 string, resultCount1 int,
 	driverName2, dataSourceName2, query2 string, resultCount2 int,
-) (tract.WorkerFactory, error) {
+) (tract.WorkerFactory[DatabaseResultsRequest], error) {
 	db, err := sql.Open(driverName1, dataSourceName1)
 	if err != nil {
 		return nil, err
@@ -41,7 +42,7 @@ type databaseWorkerFactory struct {
 	workerDriverName, workerDataSourceName string
 }
 
-func (f databaseWorkerFactory) MakeWorker() (tract.Worker, error) {
+func (f databaseWorkerFactory) MakeWorker() (tract.Worker[DatabaseResultsRequest], error) {
 	db, err := sql.Open(f.workerDriverName, f.workerDataSourceName)
 	if err != nil {
 		return nil, err
@@ -77,7 +78,7 @@ type databaseWorker struct {
 	results, resultsPtrs []interface{}
 }
 
-func (w *databaseWorker) Work(r tract.Request) (tract.Request, bool) {
+func (w *databaseWorker) Work(r *tract.Request[DatabaseResultsRequest]) (*tract.Request[DatabaseResultsRequest], bool) {
 	err := w.db.QueryRow(w.query1).Scan(w.resultsPtrs...)
 	if err != nil {
 		// Handle error
@@ -95,7 +96,8 @@ func (w *databaseWorker) Work(r tract.Request) (tract.Request, bool) {
 		// Handle error
 		return r, false
 	}
-	return context.WithValue(r, DatabaseResultsKey{}, results), true
+	r.Data.results = results
+	return r, true
 }
 
 func (w *databaseWorker) Close() {
@@ -120,18 +122,13 @@ func ExampleWorkerFactory() {
 	}
 	defer dbWorker.Close()
 
-	resultRequest, ok := dbWorker.Work(context.Background())
+	resultRequest, ok := dbWorker.Work(&tract.Request[DatabaseResultsRequest]{Data: DatabaseResultsRequest{}})
 	if !ok {
 		// Handle problem
 		return
 	}
 
-	results, ok := resultRequest.Value(DatabaseResultsKey{}).([]interface{})
-	if !ok {
-		// Handle problem
-		return
-	}
-	for _, result := range results {
+	for _, result := range resultRequest.Data.results {
 		fmt.Println(result)
 	}
 }
