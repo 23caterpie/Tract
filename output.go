@@ -4,7 +4,7 @@ package tract
 type Output[T any] interface {
 	// Put outputs the the request.
 	// Should never be called once Close has been called.
-	Put(*Request[T])
+	Put(T)
 	// Close closes the output. No more requests should be outputted.
 	// Put should not be called once Close has been called.
 	// If there is something on the other side of this output receiving
@@ -13,22 +13,25 @@ type Output[T any] interface {
 }
 
 var (
-	_ Output[int64] = OutputChannel[int64](nil)
+	_ Output[int64] = Outputs[int64, Output[int64]](nil)
 	_ Output[int64] = FinalOutput[int64]{}
 	_ Output[int64] = nonCloseOutput[int64]{}
 )
 
-// OutputChannel is a channel of requests.
-type OutputChannel[T any] chan<- *Request[T]
+type Outputs[T any, D Output[T]] []D
 
-// Put puts the request onto the channel.
-func (c OutputChannel[T]) Put(r *Request[T]) {
-	c <- r
+// Put puts on all outputs.
+func (os Outputs[T, D]) Put(t T) {
+	for _, o := range os {
+		o.Put(t)
+	}
 }
 
-// Close closes the channel.
-func (c OutputChannel[_]) Close() {
-	close(c)
+// Close closes all the outputs.
+func (os Outputs[T, D]) Close() {
+	for _, o := range os {
+		o.Close()
+	}
 }
 
 // FinalOutput is the last output for requests.
@@ -37,7 +40,7 @@ func (c OutputChannel[_]) Close() {
 type FinalOutput[T any] struct{}
 
 // Put sinks the request (noop).
-func (c FinalOutput[T]) Put(r *Request[T]) {}
+func (c FinalOutput[T]) Put(T) {}
 
 // Close is a noop.
 func (c FinalOutput[_]) Close() {}

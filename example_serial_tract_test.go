@@ -11,9 +11,9 @@ import (
 
 // These are compiler checks to make sure our implementations satisfy the tract Workers interface
 var (
-	_ tract.Worker[float64] = SquareRootWorker{}
-	_ tract.Worker[float64] = &SliceArgReaderWorker{}
-	_ tract.Worker[float64] = &SliceResultsWriterWorker{}
+	_ tract.Worker[float64, float64] = SquareRootWorker{}
+	_ tract.Worker[float64, float64] = &SliceArgReaderWorker{}
+	_ tract.Worker[float64, float64] = &SliceResultsWriterWorker{}
 )
 
 // SquareRootWorker is a middle stage worker in a tract.
@@ -22,9 +22,8 @@ var (
 // SquareRootWorker performs `math.Sqrt` on its argument.
 type SquareRootWorker struct{}
 
-func (w SquareRootWorker) Work(r *tract.Request[float64]) (*tract.Request[float64], bool) {
-	r.Data = math.Sqrt(r.Data)
-	return r, true
+func (w SquareRootWorker) Work(r float64) (float64, bool) {
+	return math.Sqrt(r), true
 }
 
 func (w SquareRootWorker) Close() {}
@@ -46,14 +45,15 @@ type SliceArgReaderWorker struct {
 	mutex     sync.Mutex
 }
 
-func (w *SliceArgReaderWorker) Work(r *tract.Request[float64]) (*tract.Request[float64], bool) {
+func (w *SliceArgReaderWorker) Work(r float64) (float64, bool) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 	if len(w.arguments) == 0 {
 		return r, false
 	}
-	r.Data, w.arguments = w.arguments[0], w.arguments[1:]
-	return r, true
+	var output float64
+	output, w.arguments = w.arguments[0], w.arguments[1:]
+	return output, true
 }
 
 func (w *SliceArgReaderWorker) Close() {}
@@ -68,11 +68,11 @@ type SliceResultsWriterWorker struct {
 	mutex   sync.Mutex
 }
 
-func (w *SliceResultsWriterWorker) Work(r *tract.Request[float64]) (*tract.Request[float64], bool) {
+func (w *SliceResultsWriterWorker) Work(r float64) (float64, bool) {
 	w.mutex.Lock()
-	w.results = append(w.results, r.Data)
+	w.results = append(w.results, r)
 	w.mutex.Unlock()
-	return r, true
+	return 0, true
 }
 
 func (w *SliceResultsWriterWorker) Close() {}
@@ -82,21 +82,23 @@ func ExampleTract_serialGroupTract() {
 	var resultsWorker SliceResultsWriterWorker
 	wholeTract := tract.NewSerialGroupTract("my tract",
 		tract.NewWorkerTract("argment reader", 1,
-			tract.NewFactoryFromWorker[float64](&SliceArgReaderWorker{
+			tract.NewFactoryFromWorker[float64, float64](&SliceArgReaderWorker{
 				arguments: []float64{0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100},
 			}),
 		),
-		tract.NewWorkerTract("square root", 4, tract.NewFactoryFromWorker[float64](SquareRootWorker{})),
-		tract.NewWorkerTract("result reader", 1, tract.NewFactoryFromWorker[float64](&resultsWorker)),
+		tract.NewWorkerTract("square root", 4,
+			tract.NewFactoryFromWorker[float64, float64](SquareRootWorker{}),
+		),
 	)
+	wholeTract = tract.ContinueSerialGroupTract(wholeTract, tract.NewWorkerTract("result reader", 1, tract.NewFactoryFromWorker[float64, float64](&resultsWorker)))
 
-	err := wholeTract.Init()
+	tractStarter, err := wholeTract.Init(tract.InputGenerator[float64]{}, tract.FinalOutput[float64]{})
 	if err != nil {
 		//  Handle error
 	}
 
-	wait := wholeTract.Start()
-	wait()
+	tractWaiter := tractStarter.Start()
+	tractWaiter.Wait()
 
 	sort.Sort(sort.Float64Slice(resultsWorker.results))
 	for _, result := range resultsWorker.results {

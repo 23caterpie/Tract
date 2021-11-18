@@ -50,3 +50,11 @@ passed along to the paralell tract's output.
 A fanout tract has multiple independent tracts. When this tract receives a request on
 its input, it is multiplied and passed to every inner tract. Each of these requests
 processes through its tract, and passed along to the fanout tract's output.
+
+TODO:
+* Add Open Census support.
+* Support Tracts with different input and output types.
+  - Maybe add an interface for passing contexts that can be optionally implemented. Would allow for request lifetime metrics.
+* Focus on ease of use.
+  - look into simplifying the external api.
+* Remove need for InputGenerator.

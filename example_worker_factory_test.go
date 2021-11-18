@@ -8,18 +8,25 @@ import (
 )
 
 var (
-	_ tract.WorkerFactory[DatabaseResultsRequest] = databaseWorkerFactory{}
-	_ tract.Worker[DatabaseResultsRequest]        = &databaseWorker{}
+	_ tract.WorkerFactory[*DatabaseArgs, *DatabaseResults] = databaseWorkerFactory{}
+	_ tract.Worker[*DatabaseArgs, *DatabaseResults]        = &databaseWorker{}
 )
 
-type DatabaseResultsRequest struct {
-	results []interface{}
-}
+type (
+	// TODO: use this and fix the example...
+	DatabaseArgs struct {
+		args []interface{}
+	}
+
+	DatabaseResults struct {
+		results []interface{}
+	}
+)
 
 func NewDatabaseWorkerFactory(
 	driverName1, dataSourceName1, query1 string, resultCount1 int,
 	driverName2, dataSourceName2, query2 string, resultCount2 int,
-) (tract.WorkerFactory[DatabaseResultsRequest], error) {
+) (tract.WorkerFactory[*DatabaseArgs, *DatabaseResults], error) {
 	db, err := sql.Open(driverName1, dataSourceName1)
 	if err != nil {
 		return nil, err
@@ -42,7 +49,7 @@ type databaseWorkerFactory struct {
 	workerDriverName, workerDataSourceName string
 }
 
-func (f databaseWorkerFactory) MakeWorker() (tract.Worker[DatabaseResultsRequest], error) {
+func (f databaseWorkerFactory) MakeWorker() (tract.Worker[*DatabaseArgs, *DatabaseResults], error) {
 	db, err := sql.Open(f.workerDriverName, f.workerDataSourceName)
 	if err != nil {
 		return nil, err
@@ -78,11 +85,11 @@ type databaseWorker struct {
 	results, resultsPtrs []interface{}
 }
 
-func (w *databaseWorker) Work(r *tract.Request[DatabaseResultsRequest]) (*tract.Request[DatabaseResultsRequest], bool) {
+func (w *databaseWorker) Work(_ *DatabaseArgs) (*DatabaseResults, bool) {
 	err := w.db.QueryRow(w.query1).Scan(w.resultsPtrs...)
 	if err != nil {
 		// Handle error
-		return r, false
+		return nil, false
 	}
 
 	results := make([]interface{}, w.resultCount2)
@@ -94,10 +101,11 @@ func (w *databaseWorker) Work(r *tract.Request[DatabaseResultsRequest]) (*tract.
 	err = w.localDB.QueryRow(w.query2, w.results...).Scan(resultsPtrs...)
 	if err != nil {
 		// Handle error
-		return r, false
+		return nil, false
 	}
-	r.Data.results = results
-	return r, true
+	return &DatabaseResults{
+		results: results,
+	}, true
 }
 
 func (w *databaseWorker) Close() {
@@ -122,13 +130,13 @@ func ExampleWorkerFactory() {
 	}
 	defer dbWorker.Close()
 
-	resultRequest, ok := dbWorker.Work(&tract.Request[DatabaseResultsRequest]{Data: DatabaseResultsRequest{}})
+	resultRequest, ok := dbWorker.Work(&DatabaseArgs{})
 	if !ok {
 		// Handle problem
 		return
 	}
 
-	for _, result := range resultRequest.Data.results {
+	for _, result := range resultRequest.results {
 		fmt.Println(result)
 	}
 }

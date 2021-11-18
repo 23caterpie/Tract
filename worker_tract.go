@@ -1,112 +1,107 @@
 package tract
 
 import (
+	"fmt"
 	"sync"
 )
 
 // NewWorkerTract makes a new tract that will spin up @size number of workers generated from @workerFactory
 // that get from the input and put to the output of the tract.
-func NewWorkerTract[T any](name string, size int, workerFactory WorkerFactory[T], options ...WorkerTractOption[T]) Tract[T] {
-	return &workerTract[T]{
-		// input and output are overwritten when tracts are linked together
-		input:              InputGenerator[T]{},
-		output:             FinalOutput[T]{},
-		factory:            workerFactory,
-		name:               name,
-		size:               size,
-		options:            options,
-		shouldCloseFactory: false,
+func NewWorkerTract[InputType, OutputType any](
+	name string,
+	size int,
+	workerFactory WorkerFactory[InputType, OutputType],
+) Tract[InputType, OutputType] {
+	p := &workerTract[InputType, OutputType]{
+		factory: workerFactory,
+		name:    name,
+		size:    size,
 	}
+	return p
 }
 
-type workerTract[T any] struct {
+type workerTract[InputType, OutputType any] struct {
 	// NewWorkerTract() contructor initilized fields
 
-	// Input used by all workers
-	input Input[T]
-	// Output used by all workers
-	output Output[T]
-	// Factory that makes the workers on demand
-	factory WorkerFactory[T]
 	// Name of the Tract: used for logging and instrementation
 	name string
 	// Amount of workers to start
 	size int
-	// Additonal options applied to the tract on startup
-	options []WorkerTractOption[T]
-
-	// init() initialized fields
-
-	// Workers
-	workers []Worker[T]
-
-	// applyOptions() initialized fields
-
-	shouldCloseFactory bool
+	// Factory that makes the workers on demand
+	factory WorkerFactory[InputType, OutputType]
 }
 
-func (p *workerTract[_]) Name() string {
+func (p *workerTract[InputType, OutputType]) Name() string {
 	return p.name
 }
 
-func (p *workerTract[T]) Init() error {
-	// Close the workers just in case init was called multiple times
-	p.closeWorkers()
-	// Make all the  workers
-	p.workers = make([]Worker[T], p.size)
-	var err error
-	for i := range p.workers {
-		p.workers[i], err = p.factory.MakeWorker()
-		if err != nil {
-			p.close()
-			return err
-		}
-	}
-	return nil
+func (p *workerTract[InputType, OutputType]) Init(
+	input Input[InputType],
+	output Output[OutputType],
+) (TractStarter, error) {
+	return newInitializedWorkerTract(
+		p.size,
+		p.factory,
+		input,
+		output,
+	)
 }
 
-func (p *workerTract[T]) Start() func() {
-	p.applyOptions()
+func newInitializedWorkerTract[InputType, OutputType any](
+	size int,
+	factory WorkerFactory[InputType, OutputType],
+	input Input[InputType],
+	output Output[OutputType],
+) (*initializedWorkerTract[InputType, OutputType], error) {
+	// Make all the  workers.
+	p := initializedWorkerTract[InputType, OutputType]{
+		input:   input,
+		output:  output,
+		workers: make([]Worker[InputType, OutputType], size),
+	}
+	var err error
+	for i := range p.workers {
+		p.workers[i], err = factory.MakeWorker()
+		if err != nil {
+			p.closeWorkers()
+			return nil, fmt.Errorf("failed to make worker[%d]: %w", i, err)
+		}
+	}
+
+	return &p, nil
+}
+
+type initializedWorkerTract[InputType, OutputType any] struct {
+	// Input used by all workers
+	input Input[InputType]
+	// Output used by all workers
+	output  Output[OutputType]
+	workers []Worker[InputType, OutputType]
+}
+
+func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
 	// Start all the processors
 	workerWG := &sync.WaitGroup{}
 	for i := range p.workers {
 		workerWG.Add(1)
-		go func(worker Worker[T]) {
+		go func(worker Worker[InputType, OutputType]) {
 			defer workerWG.Done()
 			process(p.input, worker, p.output)
 		}(p.workers[i])
 	}
-	// Automatically close all the workers, the factory, and the output when all the workers finish.
-	return func() {
+	// Automatically close all the workers and the output when all the workers finish.
+	return tractWaiterFunc(func() {
 		workerWG.Wait()
 		p.close()
-	}
+	})
 }
 
-func (p *workerTract[T]) SetInput(in Input[T]) {
-	p.input = in
-}
-
-func (p *workerTract[T]) SetOutput(out Output[T]) {
-	p.output = out
-}
-
-// This is called upon starting the tract; ensuring any changes to input or output has taken place before being called.
-func (p *workerTract[_]) applyOptions() {
-	for _, option := range p.options {
-		option(p)
-	}
-}
-
-func (p *workerTract[_]) close() {
+func (p *initializedWorkerTract[InputType, OutputType]) close() {
 	p.closeWorkers()
 	p.output.Close()
-	if p.shouldCloseFactory {
-		p.factory.Close()
-	}
 }
 
-func (p *workerTract[_]) closeWorkers() {
+func (p *initializedWorkerTract[InputType, OutputType]) closeWorkers() {
 	for i := range p.workers {
 		if worker := p.workers[i]; worker != nil {
 			worker.Close()
@@ -114,15 +109,15 @@ func (p *workerTract[_]) closeWorkers() {
 	}
 }
 
-func process[T any](input Input[T], worker Worker[T], output Output[T]) {
+func process[InputType, OutputType any](input Input[InputType], worker Worker[InputType, OutputType], output Output[OutputType]) {
 	var (
-		outputRequest *Request[T]
+		outputRequest OutputType
 		shouldSend    bool
 
-		inputRequest *Request[T]
+		inputRequest InputType
 		ok           bool
 
-		_, isHeadTract = input.(InputGenerator[T])
+		_, isHeadTract = input.(InputGenerator[InputType])
 	)
 	for {
 		inputRequest, ok = input.Get()

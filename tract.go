@@ -1,11 +1,10 @@
 package tract
 
 var (
-	_ Tract[int64] = &workerTract[int64]{}
-	_ Tract[int64] = &serialGroupTract[int64]{}
-	_ Tract[int64] = &paralellGroupTract[int64]{}
-	_ Tract[int64] = &fanOutGroupTract[int64]{}
-	_ Tract[int64] = &fanOutTract[int64]{}
+	_ Tract[int64, string] = &workerTract[int64, string]{}
+	_ Tract[int64, string] = &SerialGroupTract[int64, bool, string]{}
+	_ Tract[int64, string] = &ParalellGroupTract[int64, string]{}
+	_ Tract[int64, string] = &FanOutGroupTract[int64, bool, string]{}
 )
 
 // Tract is a highly concurrent, scalable design pattern.
@@ -19,46 +18,86 @@ var (
 //  1. myTract is constructed by one of the Tract contructors in this package.
 //  2. myTract is initialized by calling myTract.Init().
 //     * if Init() returns an error, it is not safe to proceed.
-//  3. myTract is started by calling myTract.Start().
-//  4. myTract is closed by calling the callback returned from Start().
-//  5. myTract can be used again by looping back to step 2 (by default).
-//     * Init() -> Start()() -> Init() ...
+//  3. myTract is started by calling myTractStarter.Start() returned from Init().
+//  4. myTract is closed by calling myTractWaiter.Wait() returned from Start().
+//  5. myTract can be used multiple times using this pattern.
+//     * Init() -> Start() -> Wait()
 //
-// A tract will close when its input specifies there are no more requests to process:
-//  1. The base case first Tract is a Worker Tract. It's Worker can be viewed as the Request generator.
-//     When that Worker returns a "should not send" from Work(), there are no more Request, and the Tract will shutdown.
-//  2. The Tract's input has been manually set by the user. The user contols Tract shutdown using that input.
+// A tract will close when its input specifies there are no more requests to process.
 //
 // Usage:
 //  myTract := tract.NewXYZTract(...)
-//  err := myTract.Init()
+//  tractStarter, err := myTract.Init()
 //  if err != nil {
 //      // Handle error
 //      return
 //  }
-//  waitForTract := myTract.Start()
-//  waitForTract()
+//  tractWaiter := tractStarter.Start()
+//  tractWaiter.Wait()
 //
 //  // Let's start again!
 //  err = myTract.Init()
 //  ...
-type Tract[T any] interface {
+type Tract[InputType, OutputType any] interface {
 	// Name of the Tract: used for logging and instrementation.
 	Name() string
 	// Init initializes the Tract. Must be called before calling Start().
 	// Once Start has been called, Init should not be called.
-	Init() error
-	// Start starts the Tract. Returns a callback that waits for the Tract to finish processing.
-	// Callback must be called to close resources and close output.
-	Start() func()
-	// SetInput sets the input of the tract.
-	// Users should generally use group Tracts instead of using SetInput directly.
-	// Tracts used as sub-tracts in a tract group will have thier inputs set by the group's Init()
-	// in which case the groups SetInput should be used instead.
-	SetInput(Input[T])
-	// SetOutput sets the output of the tract.
-	// Users should generally use group Tracts instead of using SetOutput directly.
-	// Tracts used as sub-tracts in a tract group will have thier outputs set by the group's Init()
-	// in which case the groups SetOutput should be used instead.
-	SetOutput(Output[T])
+	Init(Input[InputType], Output[OutputType]) (TractStarter, error)
+}
+
+type TractStarter interface {
+	// Start starts the Tract. Returns a TractWaiter that waits for the Tract to finish processing.
+	// TractWaiter must be called to close resources and close output.
+	Start() TractWaiter
+}
+
+type TractWaiter interface {
+	// Wait waits for the Tract to finish processing
+	Wait()
+}
+
+// TODO: use and comment this. Single use.
+func NewCappedTract[InputType, OutputType any](
+	input Input[InputType],
+	tract Tract[InputType, OutputType],
+	output Output[OutputType],
+) *CappedTract[InputType, OutputType] {
+	return &CappedTract[InputType, OutputType]{
+		input:  input,
+		tract:  tract,
+		output: output,
+	}
+}
+
+type CappedTract[InputType, OutputType any] struct {
+	input  Input[InputType]
+	tract  Tract[InputType, OutputType]
+	output Output[OutputType]
+}
+
+func (t *CappedTract[InputType, OutputType]) Name() string {
+	return t.tract.Name()
+}
+
+func (t *CappedTract[InputType, OutputType]) Init() (TractStarter, error) {
+	return t.tract.Init(t.input, t.output)
+}
+
+// internal function wrappers
+
+var _ TractStarter = tractStarterFunc(nil)
+
+type tractStarterFunc func() TractWaiter
+
+func (f tractStarterFunc) Start() TractWaiter {
+	return f()
+}
+
+var _ TractWaiter = tractWaiterFunc(nil)
+
+type tractWaiterFunc func()
+
+func (f tractWaiterFunc) Wait() {
+	f()
 }

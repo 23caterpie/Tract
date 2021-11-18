@@ -1,34 +1,6 @@
 package tract
 
-import "errors"
-
-// ErrFanOutAsHead is en error returned when a fanout group doesn't have its
-// input set. Aka htere should be another Tract feeding into it.
-var ErrFanOutAsHead = errors.New("fan out tract detected with no set input")
-
-// ErrNoGroupMember is an error returned when a group tract doesn't have
-// enough members.
-var ErrNoGroupMember = errors.New("group tract detected with no inner tracts")
-
-// chain chains multiple Tracts together.
-// The result can collectively be viewed as a single larger tract.
-//
-//  ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ...
-func chain[T any](tracts ...Tract[T]) {
-	lastTract := len(tracts) - 1
-	for i := 0; i < lastTract; i++ {
-		link(tracts[i], tracts[i+1])
-	}
-}
-
-// link links 2 Tracts together.
-//
-// ( fromTract ) -> ( toTract )
-func link[T any](from, to Tract[T]) {
-	linkChannel := make(chan *Request[T])
-	from.SetOutput(OutputChannel[T](linkChannel))
-	to.SetInput(InputChannel[T](linkChannel))
-}
+import "fmt"
 
 // NewSerialGroupTract makes a new tract that consists muliple other tracts.
 // This accomplishes the same thing as chaining other tracts together manually,
@@ -36,66 +8,61 @@ func link[T any](from, to Tract[T]) {
 //     ----------------------------------------------
 //  -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
 //     ----------------------------------------------
-func NewSerialGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
-	tracts = append([]Tract[T]{tract}, tracts...)
-	return &serialGroupTract[T]{
-		name:   name,
-		tracts: tracts,
+func NewSerialGroupTract[InputType, InnerType, OutputType any](
+	name string,
+	head Tract[InputType, InnerType],
+	tail Tract[InnerType, OutputType],
+) *SerialGroupTract[InputType, InnerType, OutputType] {
+	return &SerialGroupTract[InputType, InnerType, OutputType]{
+		name: name,
+		head: head,
+		tail: tail,
 	}
 }
 
-type serialGroupTract[T any] struct {
-	name   string
-	tracts []Tract[T]
+type SerialGroupTract[InputType, InnerType, OutputType any] struct {
+	name string
+	head Tract[InputType, InnerType]
+	tail Tract[InnerType, OutputType]
 }
 
-func (p *serialGroupTract[_]) Name() string {
+func (p *SerialGroupTract[InputType, InnerType, OutputType]) Name() string {
 	return p.name
 }
 
-func (p *serialGroupTract[_]) Init() error {
-	chain(p.tracts...)
-	return p.init()
+func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
+	input Input[InputType],
+	output Output[OutputType],
+) (TractStarter, error) {
+	link := Channel[InnerType](make(chan InnerType))
+
+	headerStarter, err := p.head.Init(input, link)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize head tract %q: %w", p.head.Name(), err)
+	}
+	tailStarter, err := p.tail.Init(link, output)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize tail tract %q: %w", p.tail.Name(), err)
+	}
+	return tractStarterFunc(func() TractWaiter {
+		tailWaiter := tailStarter.Start()
+		headWaiter := headerStarter.Start()
+		return tractWaiterFunc(func() {
+			headWaiter.Wait()
+			tailWaiter.Wait()
+		})
+	}), nil
 }
 
-func (p *serialGroupTract[_]) init() error {
-	if len(p.tracts) == 0 {
-		return ErrNoGroupMember
+func ContinueSerialGroupTract[InputType, InputInnerType, OutputInnerType, OutputType any](
+	head *SerialGroupTract[InputType, InputInnerType, OutputInnerType],
+	tail Tract[OutputInnerType, OutputType],
+) *SerialGroupTract[InputType, OutputInnerType, OutputType] {
+	return &SerialGroupTract[InputType, OutputInnerType, OutputType]{
+		name: head.name,
+		head: head,
+		tail: tail,
 	}
-	var err error
-	for _, tract := range p.tracts {
-		err = tract.Init()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *serialGroupTract[_]) Start() func() {
-	callbacks := []func(){}
-	for i := len(p.tracts) - 1; i >= 0; i-- {
-		callbacks = append(callbacks, p.tracts[i].Start())
-	}
-	return func() {
-		for i := len(callbacks) - 1; i >= 0; i-- {
-			callbacks[i]()
-		}
-	}
-}
-
-func (p *serialGroupTract[T]) SetInput(in Input[T]) {
-	if len(p.tracts) == 0 {
-		return
-	}
-	p.tracts[0].SetInput(in)
-}
-
-func (p *serialGroupTract[T]) SetOutput(out Output[T]) {
-	if len(p.tracts) == 0 {
-		return
-	}
-	p.tracts[len(p.tracts)-1].SetOutput(out)
 }
 
 // NewParalellGroupTract makes a new tract that consists of muliple other tracts.
@@ -107,49 +74,50 @@ func (p *serialGroupTract[T]) SetOutput(out Output[T]) {
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewParalellGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
-	tracts = append([]Tract[T]{tract}, tracts...)
-	pTract := &paralellGroupTract[T]{}
-	pTract.name = name
-	pTract.tracts = tracts
-	pTract.output = FinalOutput[T]{}
-	return pTract
-}
-
-type paralellGroupTract[T any] struct {
-	serialGroupTract[T]
-	output Output[T]
-}
-
-func (p *paralellGroupTract[_]) Init() error {
-	return p.init()
-}
-
-func (p *paralellGroupTract[_]) Start() func() {
-	wait := p.serialGroupTract.Start()
-	return func() {
-		wait()
-		p.output.Close()
+func NewParalellGroupTract[InputType, OutputType any](
+	name string,
+	tracts ...Tract[InputType, OutputType],
+) *ParalellGroupTract[InputType, OutputType] {
+	return &ParalellGroupTract[InputType, OutputType]{
+		name:   name,
+		tracts: tracts,
 	}
 }
 
-func (p *paralellGroupTract[T]) SetInput(in Input[T]) {
-	if len(p.tracts) == 0 {
-		return
-	}
-	for _, tract := range p.tracts {
-		tract.SetInput(in)
-	}
+type ParalellGroupTract[InputType, OutputType any] struct {
+	name   string
+	tracts []Tract[InputType, OutputType]
 }
 
-func (p *paralellGroupTract[T]) SetOutput(out Output[T]) {
-	if len(p.tracts) == 0 {
-		return
+func (p *ParalellGroupTract[InputType, OutputType]) Name() string {
+	return p.name
+}
+
+func (p *ParalellGroupTract[InputType, OutputType]) Init(
+	input Input[InputType],
+	output Output[OutputType],
+) (TractStarter, error) {
+	starters := make([]TractStarter, len(p.tracts))
+	for i := range p.tracts {
+		var err error
+		starters[i], err = p.tracts[i].Init(input, nonCloseOutput[OutputType]{Output: output})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize tract[%d] %q: %w", i, p.tracts[i].Name(), err)
+		}
 	}
-	for _, tract := range p.tracts {
-		tract.SetOutput(nonCloseOutput[T]{Output: out})
-	}
-	p.output = out
+
+	return tractStarterFunc(func() TractWaiter {
+		waiters := make([]TractWaiter, len(starters))
+		for i := range starters {
+			waiters[i] = starters[i].Start()
+		}
+		return tractWaiterFunc(func() {
+			for i := range waiters {
+				waiters[i].Wait()
+			}
+			output.Close()
+		})
+	}), nil
 }
 
 // NewFanOutGroupTract makes a new tract that consists muliple other tracts.
@@ -163,55 +131,63 @@ func (p *paralellGroupTract[T]) SetOutput(out Output[T]) {
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewFanOutGroupTract[T any](name string, tract Tract[T], tracts ...Tract[T]) Tract[T] {
-	tracts = append([]Tract[T]{tract}, tracts...)
-	fanOutTract := &fanOutTract[T]{
-		input: InputGenerator[T]{},
-	}
-	fTract := &fanOutGroupTract[T]{}
-	fTract.name = name
-	fTract.tracts = append(
-		[]Tract[T]{fanOutTract},
-		tracts...,
-	)
-	fTract.output = FinalOutput[T]{}
-	return fTract
-}
-
-type fanOutGroupTract[T any] struct {
-	serialGroupTract[T]
-	output Output[T]
-}
-
-func (p *fanOutGroupTract[T]) Init() error {
-	if _, weAreHeadTract := p.tracts[0].(*fanOutTract[T]).input.(InputGenerator[T]); weAreHeadTract {
-		return ErrFanOutAsHead
-	}
-	if len(p.tracts) <= 1 {
-		return ErrNoGroupMember
-	}
-	// Connect the fan out tract to all the other tracts.
-	for _, tract := range p.tracts[1:] {
-		link(p.tracts[0], tract)
-	}
-	return p.init()
-}
-
-func (p *fanOutGroupTract[_]) Start() func() {
-	wait := p.serialGroupTract.Start()
-	return func() {
-		wait()
-		p.output.Close()
+func NewFanOutGroupTract[InputType, InnerType, OutputType any](
+	name string,
+	tract Tract[InputType, InnerType],
+	tracts ...Tract[InnerType, OutputType],
+) *FanOutGroupTract[InputType, InnerType, OutputType] {
+	return &FanOutGroupTract[InputType, InnerType, OutputType]{
+		name:  name,
+		head:  tract,
+		tails: tracts,
 	}
 }
 
-func (p *fanOutGroupTract[T]) SetOutput(out Output[T]) {
-	// The first tract is always the fanOutTract, which should not be included in the true list of inner tracts the user knows/cares about.
-	if len(p.tracts) <= 1 {
-		return
+type FanOutGroupTract[InputType, InnerType, OutputType any] struct {
+	name  string
+	head  Tract[InputType, InnerType]
+	tails []Tract[InnerType, OutputType]
+}
+
+func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Name() string {
+	return p.name
+}
+
+func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
+	input Input[InputType],
+	output Output[OutputType],
+) (TractStarter, error) {
+	links := make([]Channel[InnerType], len(p.tails))
+	for i := range links {
+		links[i] = make(chan InnerType)
 	}
-	for _, tract := range p.tracts[1:] {
-		tract.SetOutput(nonCloseOutput[T]{Output: out})
+
+	headerStarter, err := p.head.Init(input, Outputs[InnerType, Channel[InnerType]](links))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize head tract %q: %w", p.head.Name(), err)
 	}
-	p.output = out
+
+	tailStarters := make([]TractStarter, len(p.tails))
+	for i := range p.tails {
+		var err error
+		tailStarters[i], err = p.tails[i].Init(links[i], nonCloseOutput[OutputType]{Output: output})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize tail tract[%d] %q: %w", i, p.tails[i].Name(), err)
+		}
+	}
+
+	return tractStarterFunc(func() TractWaiter {
+		tailWaiters := make([]TractWaiter, len(tailStarters))
+		for i := range tailStarters {
+			tailWaiters[i] = tailStarters[i].Start()
+		}
+		headWaiter := headerStarter.Start()
+		return tractWaiterFunc(func() {
+			headWaiter.Wait()
+			for i := range tailWaiters {
+				tailWaiters[i].Wait()
+			}
+			output.Close()
+		})
+	}), nil
 }
