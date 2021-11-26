@@ -98,7 +98,9 @@ func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
 
 func (p *initializedWorkerTract[InputType, OutputType]) close() {
 	p.closeWorkers()
-	p.output.Close()
+	if p.output != nil {
+		p.output.Close()
+	}
 }
 
 func (p *initializedWorkerTract[InputType, OutputType]) closeWorkers() {
@@ -116,8 +118,6 @@ func process[InputType, OutputType any](input Input[InputType], worker Worker[In
 
 		inputRequest InputType
 		ok           bool
-
-		_, isHeadTract = input.(InputGenerator[InputType])
 	)
 	for {
 		inputRequest, ok = input.Get()
@@ -125,14 +125,8 @@ func process[InputType, OutputType any](input Input[InputType], worker Worker[In
 			break
 		}
 		outputRequest, shouldSend = worker.Work(inputRequest)
-		if shouldSend {
+		if shouldSend && output != nil {
 			output.Put(outputRequest)
-		} else {
-			if isHeadTract {
-				// If this is the head tract, then the worker is responsible for termination.
-				// If the worker returns a "should not send" result, this is the signal to stop processing.
-				break
-			}
 		}
 	}
 }

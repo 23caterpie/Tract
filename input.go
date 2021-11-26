@@ -6,18 +6,3 @@ type Input[T any] interface {
 	// It's false when there is no requests and never will be any more.
 	Get() (T, bool)
 }
-
-var (
-	_ Input[int64] = InputGenerator[int64]{}
-)
-
-// TODO: remove this.
-// InputGenerator generates request objects.
-// It is the default input of a Tract.
-type InputGenerator[T any] struct{}
-
-// Get generates the next request.
-func (c InputGenerator[T]) Get() (T, bool) {
-	var t T
-	return t, true
-}

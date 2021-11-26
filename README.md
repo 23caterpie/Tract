@@ -53,8 +53,6 @@ processes through its tract, and passed along to the fanout tract's output.
 
 TODO:
 * Add Open Census support.
-* Support Tracts with different input and output types.
-  - Maybe add an interface for passing contexts that can be optionally implemented. Would allow for request lifetime metrics.
+* Maybe add an interface for passing contexts that can be optionally implemented. Would allow for request lifetime metrics.
 * Focus on ease of use.
   - look into simplifying the external api.
-* Remove need for InputGenerator.

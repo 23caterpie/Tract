@@ -115,7 +115,9 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 			for i := range waiters {
 				waiters[i].Wait()
 			}
-			output.Close()
+			if output != nil {
+				output.Close()
+			}
 		})
 	}), nil
 }
@@ -162,7 +164,7 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 		links[i] = make(chan InnerType)
 	}
 
-	headerStarter, err := p.head.Init(input, Outputs[InnerType, Channel[InnerType]](links))
+	headerStarter, err := p.head.Init(input, outputs[InnerType, Channel[InnerType]](links))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize head tract %q: %w", p.head.Name(), err)
 	}
@@ -187,7 +189,9 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 			for i := range tailWaiters {
 				tailWaiters[i].Wait()
 			}
-			output.Close()
+			if output != nil {
+				output.Close()
+			}
 		})
 	}), nil
 }

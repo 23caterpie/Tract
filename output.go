@@ -13,37 +13,25 @@ type Output[T any] interface {
 }
 
 var (
-	_ Output[int64] = Outputs[int64, Output[int64]](nil)
-	_ Output[int64] = FinalOutput[int64]{}
+	_ Output[int64] = outputs[int64, Output[int64]](nil)
 	_ Output[int64] = nonCloseOutput[int64]{}
 )
 
-type Outputs[T any, D Output[T]] []D
+type outputs[T any, D Output[T]] []D
 
 // Put puts on all outputs.
-func (os Outputs[T, D]) Put(t T) {
+func (os outputs[T, D]) Put(t T) {
 	for _, o := range os {
 		o.Put(t)
 	}
 }
 
 // Close closes all the outputs.
-func (os Outputs[T, D]) Close() {
+func (os outputs[T, D]) Close() {
 	for _, o := range os {
 		o.Close()
 	}
 }
-
-// FinalOutput is the last output for requests.
-// Requests that are outputted here have reached the end of their life.
-// It is the default output of a Tract.
-type FinalOutput[T any] struct{}
-
-// Put sinks the request (noop).
-func (c FinalOutput[T]) Put(T) {}
-
-// Close is a noop.
-func (c FinalOutput[_]) Close() {}
 
 // nonCloseOutput is an Output wrapper that turns the `Close()` method to a noop.
 // Used in group tracts that can possibly fan request into an output, thus requiring

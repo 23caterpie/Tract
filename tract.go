@@ -57,31 +57,44 @@ type TractWaiter interface {
 	Wait()
 }
 
-// TODO: use and comment this. Single use.
-func NewCappedTract[InputType, OutputType any](
+func Run[InputType, OutputType any](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],
 	output Output[OutputType],
-) *CappedTract[InputType, OutputType] {
-	return &CappedTract[InputType, OutputType]{
+) error {
+	return NewTractRunner(input, tract, output).Run()
+}
+
+// TODO: use and comment this. Single use.
+func NewTractRunner[InputType, OutputType any](
+	input Input[InputType],
+	tract Tract[InputType, OutputType],
+	output Output[OutputType],
+) *TractRunner[InputType, OutputType] {
+	return &TractRunner[InputType, OutputType]{
 		input:  input,
 		tract:  tract,
 		output: output,
 	}
 }
 
-type CappedTract[InputType, OutputType any] struct {
+type TractRunner[InputType, OutputType any] struct {
 	input  Input[InputType]
 	tract  Tract[InputType, OutputType]
 	output Output[OutputType]
 }
 
-func (t *CappedTract[InputType, OutputType]) Name() string {
+func (t *TractRunner[InputType, OutputType]) Name() string {
 	return t.tract.Name()
 }
 
-func (t *CappedTract[InputType, OutputType]) Init() (TractStarter, error) {
-	return t.tract.Init(t.input, t.output)
+func (t *TractRunner[InputType, OutputType]) Run() error {
+	starter, err := t.tract.Init(t.input, t.output)
+	if err != nil {
+		return err
+	}
+	starter.Start().Wait()
+	return nil
 }
 
 // internal function wrappers
