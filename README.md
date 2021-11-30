@@ -56,3 +56,4 @@ TODO:
 * Maybe add an interface for passing contexts that can be optionally implemented. Would allow for request lifetime metrics.
 * Focus on ease of use.
   - look into simplifying the external api.
+* assert package in tests?

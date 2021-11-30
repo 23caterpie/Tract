@@ -6,3 +6,7 @@ type Input[T any] interface {
 	// It's false when there is no requests and never will be any more.
 	Get() (T, bool)
 }
+
+var (
+	_ Input[int64] = Channel[int64](nil)
+)

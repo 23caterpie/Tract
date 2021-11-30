@@ -57,7 +57,7 @@ func newInitializedWorkerTract[InputType, OutputType any](
 	p := initializedWorkerTract[InputType, OutputType]{
 		input:   input,
 		output:  output,
-		workers: make([]Worker[InputType, OutputType], size),
+		workers: make([]WorkerCloser[InputType, OutputType], size),
 	}
 	var err error
 	for i := range p.workers {
@@ -76,7 +76,7 @@ type initializedWorkerTract[InputType, OutputType any] struct {
 	input Input[InputType]
 	// Output used by all workers
 	output  Output[OutputType]
-	workers []Worker[InputType, OutputType]
+	workers []WorkerCloser[InputType, OutputType]
 }
 
 func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {

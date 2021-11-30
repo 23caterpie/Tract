@@ -16,18 +16,20 @@ var (
 //
 // A Tract lifecycle is as follows:
 //  1. myTract is constructed by one of the Tract contructors in this package.
-//  2. myTract is initialized by calling myTract.Init().
+//  2. myInput and optionally myOutput are initized. The most input/output is tract.Channel.
+//  2. myTract is initialized by calling myTract.Init(myInput, myOutput).
 //     * if Init() returns an error, it is not safe to proceed.
 //  3. myTract is started by calling myTractStarter.Start() returned from Init().
 //  4. myTract is closed by calling myTractWaiter.Wait() returned from Start().
 //  5. myTract can be used multiple times using this pattern.
-//     * Init() -> Start() -> Wait()
+//     * Init(myInput, myOutput) -> Start() -> Wait()
 //
 // A tract will close when its input specifies there are no more requests to process.
 //
 // Usage:
 //  myTract := tract.NewXYZTract(...)
-//  tractStarter, err := myTract.Init()
+//  myInput := tract.Channel(nil)
+//  tractStarter, err := myTract.Init(myInput, nil)
 //  if err != nil {
 //      // Handle error
 //      return
@@ -36,7 +38,7 @@ var (
 //  tractWaiter.Wait()
 //
 //  // Let's start again!
-//  err = myTract.Init()
+//  err = myTract.Init(...)
 //  ...
 type Tract[InputType, OutputType any] interface {
 	// Name of the Tract: used for logging and instrementation.
@@ -57,6 +59,8 @@ type TractWaiter interface {
 	Wait()
 }
 
+// Run runs a tract with a given input and output.
+// Returns an error if the tract failed to initialize.
 func Run[InputType, OutputType any](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],
@@ -65,7 +69,7 @@ func Run[InputType, OutputType any](
 	return NewTractRunner(input, tract, output).Run()
 }
 
-// TODO: use and comment this. Single use.
+// NewTractRunner provides a simplified interface for runner a tract with a given input and output.
 func NewTractRunner[InputType, OutputType any](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],
@@ -84,10 +88,12 @@ type TractRunner[InputType, OutputType any] struct {
 	output Output[OutputType]
 }
 
+// Name returns the name of the tract.
 func (t *TractRunner[InputType, OutputType]) Name() string {
 	return t.tract.Name()
 }
 
+// Run runs the tract according to the documented usage of a tract using the runner's input and output.
 func (t *TractRunner[InputType, OutputType]) Run() error {
 	starter, err := t.tract.Init(t.input, t.output)
 	if err != nil {

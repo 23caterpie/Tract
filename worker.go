@@ -8,9 +8,7 @@ type WorkerFactory[InputType, OutputType any] interface {
 	// instanciated here, and closed by the Worker's Close() method. Any resources the Workers will
 	// share should be instantiated in this WorkerFactory's Contructor and closed by its Close()
 	// method, or should be instaniated and closed in a higher scope.
-	MakeWorker() (Worker[InputType, OutputType], error)
-	// Close closes factory resources
-	Close()
+	MakeWorker() (WorkerCloser[InputType, OutputType], error)
 }
 
 // Worker is an object that performs work potentially using it own resources and/or factory resources.
@@ -21,12 +19,18 @@ type Worker[InputType, OutputType any] interface {
 	// then apply the results of the work to the same request using context.WithValue(request, ...).
 	// When designing workers keep the keys for the request values you will be using in mind.
 	Work(InputType) (OutputType, bool)
+}
+
+// WorkerCloser is a Worker that closes its own locally scoped resources.
+type WorkerCloser[InputType, OutputType any] interface {
+	Worker[InputType, OutputType]
 	// Close closes worker resources
 	Close()
 }
 
 var (
 	_ WorkerFactory[int64, int64] = workerAsFactory[int64, int64]{}
+	_ WorkerCloser[int64, int64]  = nonCloseWorker[int64, int64]{}
 )
 
 // NewFactoryFromWorker makes a WorkerFactory from a provided Worker.
@@ -45,12 +49,8 @@ type workerAsFactory[InputType, OutputType any] struct {
 	worker Worker[InputType, OutputType]
 }
 
-func (f workerAsFactory[InputType, OutputType]) MakeWorker() (Worker[InputType, OutputType], error) {
+func (f workerAsFactory[InputType, OutputType]) MakeWorker() (WorkerCloser[InputType, OutputType], error) {
 	return nonCloseWorker[InputType, OutputType]{f.worker}, nil
-}
-
-func (f workerAsFactory[InputType, OutputType]) Close() {
-	f.worker.Close()
 }
 
 type nonCloseWorker[InputType, OutputType any] struct {

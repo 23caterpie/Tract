@@ -13,6 +13,7 @@ type Output[T any] interface {
 }
 
 var (
+	_ Output[int64] = Channel[int64](nil)
 	_ Output[int64] = outputs[int64, Output[int64]](nil)
 	_ Output[int64] = nonCloseOutput[int64]{}
 )

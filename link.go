@@ -1,14 +1,5 @@
 package tract
 
-type link[T any] interface {
-	Input[T]
-	Output[T]
-}
-
-var (
-	_ link[int64] = Channel[int64](nil)
-)
-
 // Channel is a channel of requests.
 type Channel[T any] chan T
 
