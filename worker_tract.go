@@ -7,7 +7,7 @@ import (
 
 // NewWorkerTract makes a new tract that will spin up @size number of workers generated from @workerFactory
 // that get from the input and put to the output of the tract.
-func NewWorkerTract[InputType, OutputType any](
+func NewWorkerTract[InputType, OutputType Request](
 	name string,
 	size int,
 	workerFactory WorkerFactory[InputType, OutputType],
@@ -20,7 +20,7 @@ func NewWorkerTract[InputType, OutputType any](
 	return p
 }
 
-type workerTract[InputType, OutputType any] struct {
+type workerTract[InputType, OutputType Request] struct {
 	// NewWorkerTract() contructor initilized fields
 
 	// Name of the Tract: used for logging and instrementation
@@ -40,6 +40,7 @@ func (p *workerTract[InputType, OutputType]) Init(
 	output Output[OutputType],
 ) (TractStarter, error) {
 	return newInitializedWorkerTract(
+		p.name,
 		p.size,
 		p.factory,
 		input,
@@ -47,7 +48,8 @@ func (p *workerTract[InputType, OutputType]) Init(
 	)
 }
 
-func newInitializedWorkerTract[InputType, OutputType any](
+func newInitializedWorkerTract[InputType, OutputType Request](
+	name string,
 	size int,
 	factory WorkerFactory[InputType, OutputType],
 	input Input[InputType],
@@ -55,6 +57,7 @@ func newInitializedWorkerTract[InputType, OutputType any](
 ) (*initializedWorkerTract[InputType, OutputType], error) {
 	// Make all the  workers.
 	p := initializedWorkerTract[InputType, OutputType]{
+		name:    name,
 		input:   input,
 		output:  output,
 		workers: make([]WorkerCloser[InputType, OutputType], size),
@@ -71,7 +74,8 @@ func newInitializedWorkerTract[InputType, OutputType any](
 	return &p, nil
 }
 
-type initializedWorkerTract[InputType, OutputType any] struct {
+type initializedWorkerTract[InputType, OutputType Request] struct {
+	name string
 	// Input used by all workers
 	input Input[InputType]
 	// Output used by all workers
@@ -80,13 +84,27 @@ type initializedWorkerTract[InputType, OutputType any] struct {
 }
 
 func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
+	var (
+		// This checkpoint system is a way of injecting dependancies without requiring imports for eveyone.
+		// ex: metrics and tracing.
+		workerContext = WorkerContext{
+			WorkerName: p.name,
+		}
+		inputCheckpoint  = initRegisteredWorkerInputCheckpoints(workerContext)
+		workerCheckpoint = initRegisteredWorkerWorkCheckpoints(workerContext)
+		outputCheckpoint = initRegisteredWorkerOutputCheckpoints(workerContext)
+	)
 	// Start all the processors
 	workerWG := &sync.WaitGroup{}
 	for i := range p.workers {
 		workerWG.Add(1)
 		go func(worker Worker[InputType, OutputType]) {
 			defer workerWG.Done()
-			process(p.input, worker, p.output)
+			process(
+				NewCheckpointInput(inputCheckpoint, p.input),
+				NewCheckpointWorker(workerCheckpoint, worker),
+				NewCheckpointOutput(outputCheckpoint, p.output),
+			)
 		}(p.workers[i])
 	}
 	// Automatically close all the workers and the output when all the workers finish.
@@ -111,7 +129,11 @@ func (p *initializedWorkerTract[InputType, OutputType]) closeWorkers() {
 	}
 }
 
-func process[InputType, OutputType any](input Input[InputType], worker Worker[InputType, OutputType], output Output[OutputType]) {
+func process[InputType, OutputType Request](
+	input Input[InputType],
+	worker Worker[InputType, OutputType],
+	output Output[OutputType],
+) {
 	var (
 		outputRequest OutputType
 		shouldSend    bool
@@ -124,7 +146,9 @@ func process[InputType, OutputType any](input Input[InputType], worker Worker[In
 		if !ok {
 			break
 		}
+
 		outputRequest, shouldSend = worker.Work(inputRequest)
+
 		if shouldSend && output != nil {
 			output.Put(outputRequest)
 		}

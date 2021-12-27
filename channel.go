@@ -1,7 +1,7 @@
 package tract
 
 // Channel is a channel of requests.
-type Channel[T any] chan T
+type Channel[T Request] chan T
 
 // Put puts the request onto the channel.
 func (c Channel[T]) Put(t T) {

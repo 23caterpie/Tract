@@ -10,7 +10,7 @@ import (
 
 var _ tract.WorkerFactory[int64, string] = testWorkerFactory[int64, string]{}
 
-type testWorkerFactory[InputType, OutputType any] struct {
+type testWorkerFactory[InputType, OutputType tract.Request] struct {
 	flagMakeWorker func()
 	tract.WorkerCloser[InputType, OutputType]
 }
@@ -22,7 +22,7 @@ func (f testWorkerFactory[InputType, OutputType]) MakeWorker() (tract.WorkerClos
 
 var _ tract.Worker[int64, string] = testWorker[int64, string]{}
 
-type testWorker[InputType, OutputType any] struct {
+type testWorker[InputType, OutputType tract.Request] struct {
 	flagClose func()
 	work      func(InputType) (OutputType, bool)
 }
@@ -35,7 +35,7 @@ func (w testWorker[InputType, OutputType]) Close() { w.flagClose() }
 
 var _ tract.Input[int64] = testInput[int64]{}
 
-type testInput[T any] struct {
+type testInput[T tract.Request] struct {
 	flagGet func()
 	get     func() (T, bool)
 }
@@ -45,7 +45,7 @@ func (i testInput[T]) Get() (T, bool) {
 	return i.get()
 }
 
-func newSourceTestInput[T any](getCount *int64, source []T) testInput[T] {
+func newSourceTestInput[T tract.Request](getCount *int64, source []T) testInput[T] {
 	mutex := new(sync.Mutex)
 	return testInput[T]{
 		flagGet: func() {
@@ -67,7 +67,7 @@ func newSourceTestInput[T any](getCount *int64, source []T) testInput[T] {
 
 var _ tract.Output[int64] = testOutput[int64]{}
 
-type testOutput[T any] struct {
+type testOutput[T tract.Request] struct {
 	flagPut   func()
 	put       func(T)
 	flagClose func()
@@ -84,7 +84,7 @@ func (o testOutput[T]) Close() {
 	o.close()
 }
 
-func newTestOutput[T any](putCount, closeCount *int64) testOutput[T] {
+func newTestOutput[T tract.Request](putCount, closeCount *int64) testOutput[T] {
 	return testOutput[T]{
 		flagPut: func() {
 			atomic.AddInt64(putCount, 1)

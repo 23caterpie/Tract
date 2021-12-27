@@ -52,8 +52,6 @@ its input, it is multiplied and passed to every inner tract. Each of these reque
 processes through its tract, and passed along to the fanout tract's output.
 
 TODO:
-* Add Open Census support.
-* Maybe add an interface for passing contexts that can be optionally implemented. Would allow for request lifetime metrics.
 * Focus on ease of use.
   - look into simplifying the external api.
 * assert package in tests?

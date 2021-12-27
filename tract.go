@@ -40,7 +40,7 @@ var (
 //  // Let's start again!
 //  err = myTract.Init(...)
 //  ...
-type Tract[InputType, OutputType any] interface {
+type Tract[InputType, OutputType Request] interface {
 	// Name of the Tract: used for logging and instrementation.
 	Name() string
 	// Init initializes the Tract. Must be called before calling Start().
@@ -61,7 +61,7 @@ type TractWaiter interface {
 
 // Run runs a tract with a given input and output.
 // Returns an error if the tract failed to initialize.
-func Run[InputType, OutputType any](
+func Run[InputType, OutputType Request](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],
 	output Output[OutputType],
@@ -70,7 +70,7 @@ func Run[InputType, OutputType any](
 }
 
 // NewTractRunner provides a simplified interface for runner a tract with a given input and output.
-func NewTractRunner[InputType, OutputType any](
+func NewTractRunner[InputType, OutputType Request](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],
 	output Output[OutputType],
@@ -82,7 +82,7 @@ func NewTractRunner[InputType, OutputType any](
 	}
 }
 
-type TractRunner[InputType, OutputType any] struct {
+type TractRunner[InputType, OutputType Request] struct {
 	input  Input[InputType]
 	tract  Tract[InputType, OutputType]
 	output Output[OutputType]

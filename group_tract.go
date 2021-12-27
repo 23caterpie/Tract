@@ -8,7 +8,7 @@ import "fmt"
 //     ----------------------------------------------
 //  -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
 //     ----------------------------------------------
-func NewSerialGroupTract[InputType, InnerType, OutputType any](
+func NewSerialGroupTract[InputType, InnerType, OutputType Request](
 	name string,
 	head Tract[InputType, InnerType],
 	tail Tract[InnerType, OutputType],
@@ -17,13 +17,16 @@ func NewSerialGroupTract[InputType, InnerType, OutputType any](
 		name: name,
 		head: head,
 		tail: tail,
+		isSerialGroupStart: true,
+		isSerialGroupEnd: true,
 	}
 }
 
-type SerialGroupTract[InputType, InnerType, OutputType any] struct {
+type SerialGroupTract[InputType, InnerType, OutputType Request] struct {
 	name string
 	head Tract[InputType, InnerType]
 	tail Tract[InnerType, OutputType]
+	isSerialGroupStart, isSerialGroupEnd bool
 }
 
 func (p *SerialGroupTract[InputType, InnerType, OutputType]) Name() string {
@@ -34,6 +37,19 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
+	// Setup checkpoints.
+	{
+		groupContext := GroupContext{
+			GroupName: p.name,
+		}
+		if p.isSerialGroupStart {
+			input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
+		}
+		if p.isSerialGroupEnd {
+			output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
+		}
+	}
+
 	link := Channel[InnerType](make(chan InnerType))
 
 	headerStarter, err := p.head.Init(input, link)
@@ -54,15 +70,58 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	}), nil
 }
 
-func ContinueSerialGroupTract[InputType, InputInnerType, OutputInnerType, OutputType any](
-	head *SerialGroupTract[InputType, InputInnerType, OutputInnerType],
-	tail Tract[OutputInnerType, OutputType],
-) *SerialGroupTract[InputType, OutputInnerType, OutputType] {
-	return &SerialGroupTract[InputType, OutputInnerType, OutputType]{
-		name: head.name,
-		head: head,
-		tail: tail,
+func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupStart() {
+	p.isSerialGroupStart = false
+}
+
+func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupEnd() {
+	p.isSerialGroupEnd = false
+}
+
+// func ContinueSerialGroupTract[InputType, InputInnerType, OutputInnerType, OutputType Request](
+// 	head *SerialGroupTract[InputType, InputInnerType, OutputInnerType],
+// 	tail Tract[OutputInnerType, OutputType],
+// ) *SerialGroupTract[InputType, OutputInnerType, OutputType] {
+// 	return &SerialGroupTract[InputType, OutputInnerType, OutputType]{
+// 		name: head.name,
+// 		head: head,
+// 		tail: tail,
+// 	}
+// }
+
+func NewNamedLinker[InputType, InnerType, OutputType Request](
+	name string,
+	tract Tract[InputType, InnerType],
+) Linker[InputType, InnerType, OutputType] {
+	return Linker[InputType, InnerType, OutputType]{
+		name: name,
+		head: tract,
 	}
+}
+
+func NewLinker[InputType, InnerType, OutputType Request](
+	tract Tract[InputType, InnerType],
+) Linker[InputType, InnerType, OutputType] {
+	return Linker[InputType, InnerType, OutputType]{
+		head: tract,
+	}
+}
+
+type Linker[InputType, InnerType, OutputType Request] struct {
+	name string
+	head Tract[InputType, InnerType]
+}
+
+func (l Linker[InputType, InnerType, OutputType]) Link(
+	tail Tract[InnerType, OutputType],
+) Tract[InputType, OutputType] {
+	if h, ok := l.head.(interface{isNotSerialGroupEnd()}); ok {
+		h.isNotSerialGroupEnd()
+	}
+	if t, ok := tail.(interface{isNotSerialGroupStart()}); ok {
+		t.isNotSerialGroupStart()
+	}
+	return NewSerialGroupTract(l.name, l.head, tail)
 }
 
 // NewParalellGroupTract makes a new tract that consists of muliple other tracts.
@@ -74,7 +133,7 @@ func ContinueSerialGroupTract[InputType, InputInnerType, OutputInnerType, Output
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewParalellGroupTract[InputType, OutputType any](
+func NewParalellGroupTract[InputType, OutputType Request](
 	name string,
 	tracts ...Tract[InputType, OutputType],
 ) *ParalellGroupTract[InputType, OutputType] {
@@ -84,7 +143,7 @@ func NewParalellGroupTract[InputType, OutputType any](
 	}
 }
 
-type ParalellGroupTract[InputType, OutputType any] struct {
+type ParalellGroupTract[InputType, OutputType Request] struct {
 	name   string
 	tracts []Tract[InputType, OutputType]
 }
@@ -97,6 +156,14 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
+	// Setup checkpoints.
+	{
+		groupContext := GroupContext{
+			GroupName: p.name,
+		}
+		input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
+		output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
+	}
 	starters := make([]TractStarter, len(p.tracts))
 	for i := range p.tracts {
 		var err error
@@ -133,7 +200,7 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------
-func NewFanOutGroupTract[InputType, InnerType, OutputType any](
+func NewFanOutGroupTract[InputType, InnerType, OutputType Request](
 	name string,
 	tract Tract[InputType, InnerType],
 	tracts ...Tract[InnerType, OutputType],
@@ -145,7 +212,7 @@ func NewFanOutGroupTract[InputType, InnerType, OutputType any](
 	}
 }
 
-type FanOutGroupTract[InputType, InnerType, OutputType any] struct {
+type FanOutGroupTract[InputType, InnerType, OutputType Request] struct {
 	name  string
 	head  Tract[InputType, InnerType]
 	tails []Tract[InnerType, OutputType]
@@ -159,6 +226,14 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
+	// Setup checkpoints.
+	{
+		groupContext := GroupContext{
+			GroupName: p.name,
+		}
+		input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
+		output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
+	}
 	links := make([]Channel[InnerType], len(p.tails))
 	for i := range links {
 		links[i] = make(chan InnerType)

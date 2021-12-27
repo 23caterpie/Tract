@@ -1,7 +1,7 @@
 package tract
 
 // Output specifies a way for a Tract pass requests along.
-type Output[T any] interface {
+type Output[T Request] interface {
 	// Put outputs the the request.
 	// Should never be called once Close has been called.
 	Put(T)
@@ -18,10 +18,11 @@ var (
 	_ Output[int64] = nonCloseOutput[int64]{}
 )
 
-type outputs[T any, D Output[T]] []D
+type outputs[T Request, D Output[T]] []D
 
 // Put puts on all outputs.
 func (os outputs[T, D]) Put(t T) {
+	// TODO: how to document handling data races from this. Also what to assume is safe to support.
 	for _, o := range os {
 		o.Put(t)
 	}
@@ -37,7 +38,7 @@ func (os outputs[T, D]) Close() {
 // nonCloseOutput is an Output wrapper that turns the `Close()` method to a noop.
 // Used in group tracts that can possibly fan request into an output, thus requiring
 // the group tract to handling closing for all inner tracts.
-type nonCloseOutput[T any] struct {
+type nonCloseOutput[T Request] struct {
 	Output[T]
 }
 

@@ -1,7 +1,7 @@
 package tract
 
 // WorkerFactory makes potentially many Worker objects that may use resources managed by the factory.
-type WorkerFactory[InputType, OutputType any] interface {
+type WorkerFactory[InputType, OutputType Request] interface {
 	// MakeWorker makes a worker expected to run in a tract.
 	// This Worker contructor will be called once per worker needed for a Worker Tract.
 	// Any resources that a single worker will need (and not share with other Workers) should be
@@ -12,7 +12,7 @@ type WorkerFactory[InputType, OutputType any] interface {
 }
 
 // Worker is an object that performs work potentially using it own resources and/or factory resources.
-type Worker[InputType, OutputType any] interface {
+type Worker[InputType, OutputType Request] interface {
 	// Work takes a request, performs an operation, and returns that request and a success flag.
 	// If the returned bool is false, that specifies that the returned request should be discarded.
 	// The expected pattern is to retrieve any needed arguments from the request using request.Value(...)
@@ -22,7 +22,7 @@ type Worker[InputType, OutputType any] interface {
 }
 
 // WorkerCloser is a Worker that closes its own locally scoped resources.
-type WorkerCloser[InputType, OutputType any] interface {
+type WorkerCloser[InputType, OutputType Request] interface {
 	Worker[InputType, OutputType]
 	// Close closes worker resources
 	Close()
@@ -39,13 +39,13 @@ var (
 // that uses workers who's Work() function is already thred safe. without
 // having to make a specific factory object. The worker's call to close is
 // defered until the factory is closed.
-func NewFactoryFromWorker[InputType, OutputType any](worker Worker[InputType, OutputType]) WorkerFactory[InputType, OutputType] {
+func NewFactoryFromWorker[InputType, OutputType Request](worker Worker[InputType, OutputType]) WorkerFactory[InputType, OutputType] {
 	return workerAsFactory[InputType, OutputType]{
 		worker: worker,
 	}
 }
 
-type workerAsFactory[InputType, OutputType any] struct {
+type workerAsFactory[InputType, OutputType Request] struct {
 	worker Worker[InputType, OutputType]
 }
 
@@ -53,7 +53,7 @@ func (f workerAsFactory[InputType, OutputType]) MakeWorker() (WorkerCloser[Input
 	return nonCloseWorker[InputType, OutputType]{f.worker}, nil
 }
 
-type nonCloseWorker[InputType, OutputType any] struct {
+type nonCloseWorker[InputType, OutputType Request] struct {
 	Worker[InputType, OutputType]
 }
 
