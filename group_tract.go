@@ -112,6 +112,7 @@ type Linker[InputType, InnerType, OutputType Request] struct {
 	head Tract[InputType, InnerType]
 }
 
+// TODO: fix naming propogation.
 func (l Linker[InputType, InnerType, OutputType]) Link(
 	tail Tract[InnerType, OutputType],
 ) Tract[InputType, OutputType] {

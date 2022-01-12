@@ -18,6 +18,7 @@ type Worker[InputType, OutputType Request] interface {
 	// The expected pattern is to retrieve any needed arguments from the request using request.Value(...)
 	// then apply the results of the work to the same request using context.WithValue(request, ...).
 	// When designing workers keep the keys for the request values you will be using in mind.
+	// TODO: consider returning an error instead of a boolean.
 	Work(InputType) (OutputType, bool)
 }
 

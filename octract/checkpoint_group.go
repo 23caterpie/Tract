@@ -6,14 +6,16 @@ import (
 	"time"
 
 	tract "github.com/23caterpie/Tract"
+
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 )
 
-// TODO: setup group checkpoints.
-
 func groupInputCheckpoint(groupContext tract.GroupContext) tract.InputCheckpointClosure {
-	return func(req tract.Request) {
+	return func(req tract.Request, ok bool) {
+		if !ok {
+			return
+		}
 		if entry := getRequestCheckpointGroupLedgerEntry(req, groupContext.GroupName); entry != nil {
 			entry.startTime = now()
 		}
@@ -28,7 +30,7 @@ func groupOutputCheckpoint(groupContext tract.GroupContext, req tract.Request) t
 			[]tag.Mutator{
 				tag.Upsert(GroupName, groupContext.GroupName),
 			},
-			GroupWorkLatency.M(float64(time.Since(entry.startTime))/float64(time.Millisecond)),
+			GroupWorkLatency.M(float64(since(entry.startTime))/float64(time.Millisecond)),
 		)
 		setCtx(ctx)
 	}

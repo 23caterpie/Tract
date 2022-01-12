@@ -17,7 +17,7 @@ type (
 	InputCheckpoint[T any]    func(t T) InputCheckpointClosure
 	initilizedInputCheckpoint func() InputCheckpointClosure
 	// InputCheckpointClosure is a function that is called right after Input.Get() returns.
-	InputCheckpointClosure func(Request)
+	InputCheckpointClosure func(Request, bool)
 )
 
 func initInputCheckpoints[T any](checkpoints []InputCheckpoint[T], t T) initilizedInputCheckpoint {
@@ -29,9 +29,9 @@ func initInputCheckpoints[T any](checkpoints []InputCheckpoint[T], t T) initiliz
 			// insert closures in reverse order to sim
 			closures[lastIndex-i] = c(t)
 		}
-		return func(req Request) {
+		return func(req Request, ok bool) {
 			for _, c := range closures {
-				c(req)
+				c(req, ok)
 			}
 		}
 	}
@@ -70,6 +70,6 @@ type CheckpointInput[T Request] struct {
 func (w CheckpointInput[T]) Get() (T, bool) {
 	closeCheckpoint := w.checkpoint()
 	t, ok := w.base.Get()
-	closeCheckpoint(t)
+	closeCheckpoint(t, ok)
 	return t, ok
 }

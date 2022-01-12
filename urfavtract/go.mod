@@ -5,7 +5,7 @@ go 1.18
 replace github.com/23caterpie/Tract => ./..
 
 require (
-	github.com/23caterpie/Tract v0.0.0-20200408164817-3bbdb69e398f
+	github.com/23caterpie/Tract v1.0.0
 	github.com/urfave/cli/v2 v2.3.0
 )
 
