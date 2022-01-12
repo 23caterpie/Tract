@@ -37,19 +37,6 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
-	// Setup checkpoints.
-	{
-		groupContext := GroupContext{
-			GroupName: p.name,
-		}
-		if p.isSerialGroupStart {
-			input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
-		}
-		if p.isSerialGroupEnd {
-			output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
-		}
-	}
-
 	link := Channel[InnerType](make(chan InnerType))
 
 	headerStarter, err := p.head.Init(input, link)
@@ -77,17 +64,6 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupSta
 func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupEnd() {
 	p.isSerialGroupEnd = false
 }
-
-// func ContinueSerialGroupTract[InputType, InputInnerType, OutputInnerType, OutputType Request](
-// 	head *SerialGroupTract[InputType, InputInnerType, OutputInnerType],
-// 	tail Tract[OutputInnerType, OutputType],
-// ) *SerialGroupTract[InputType, OutputInnerType, OutputType] {
-// 	return &SerialGroupTract[InputType, OutputInnerType, OutputType]{
-// 		name: head.name,
-// 		head: head,
-// 		tail: tail,
-// 	}
-// }
 
 func NewNamedLinker[InputType, InnerType, OutputType Request](
 	name string,
@@ -157,14 +133,6 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
-	// Setup checkpoints.
-	{
-		groupContext := GroupContext{
-			GroupName: p.name,
-		}
-		input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
-		output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
-	}
 	starters := make([]TractStarter, len(p.tracts))
 	for i := range p.tracts {
 		var err error
@@ -227,14 +195,6 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[InputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
-	// Setup checkpoints.
-	{
-		groupContext := GroupContext{
-			GroupName: p.name,
-		}
-		input = NewCheckpointInput(initRegisteredGroupInputCheckpoints(groupContext), input)
-		output = NewCheckpointOutput(initRegisteredGroupOutputCheckpoints(groupContext), output)
-	}
 	links := make([]Channel[InnerType], len(p.tails))
 	for i := range links {
 		links[i] = make(chan InnerType)

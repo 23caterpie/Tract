@@ -22,7 +22,6 @@ type outputs[T Request, D Output[T]] []D
 
 // Put puts on all outputs.
 func (os outputs[T, D]) Put(t T) {
-	// TODO: how to document handling data races from this. Also what to assume is safe to support.
 	for _, o := range os {
 		o.Put(t)
 	}

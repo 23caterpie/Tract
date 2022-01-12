@@ -84,16 +84,6 @@ type initializedWorkerTract[InputType, OutputType Request] struct {
 }
 
 func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
-	var (
-		// This checkpoint system is a way of injecting dependancies without requiring imports for eveyone.
-		// ex: metrics and tracing.
-		workerContext = WorkerContext{
-			WorkerName: p.name,
-		}
-		inputCheckpoint  = initRegisteredWorkerInputCheckpoints(workerContext)
-		workerCheckpoint = initRegisteredWorkerWorkCheckpoints(workerContext)
-		outputCheckpoint = initRegisteredWorkerOutputCheckpoints(workerContext)
-	)
 	// Start all the processors
 	workerWG := &sync.WaitGroup{}
 	for i := range p.workers {
@@ -101,9 +91,9 @@ func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
 		go func(worker Worker[InputType, OutputType]) {
 			defer workerWG.Done()
 			process(
-				NewCheckpointInput(inputCheckpoint, p.input),
-				NewCheckpointWorker(workerCheckpoint, worker),
-				NewCheckpointOutput(outputCheckpoint, p.output),
+				p.input,
+				worker,
+				p.output,
 			)
 		}(p.workers[i])
 	}
