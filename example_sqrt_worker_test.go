@@ -1,6 +1,7 @@
 package tract_test
 
 import (
+	"context"
 	"math"
 	"sync"
 
@@ -20,7 +21,7 @@ var (
 // SquareRootWorker performs `math.Sqrt` on its argument.
 type SquareRootWorker struct{}
 
-func (w SquareRootWorker) Work(r float64) (float64, bool) {
+func (w SquareRootWorker) Work(_ context.Context, r float64) (float64, bool) {
 	return math.Sqrt(r), true
 }
 

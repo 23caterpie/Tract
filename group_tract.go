@@ -14,18 +14,18 @@ func NewSerialGroupTract[InputType, InnerType, OutputType Request](
 	tail Tract[InnerType, OutputType],
 ) *SerialGroupTract[InputType, InnerType, OutputType] {
 	return &SerialGroupTract[InputType, InnerType, OutputType]{
-		name: name,
-		head: head,
-		tail: tail,
+		name:               name,
+		head:               head,
+		tail:               tail,
 		isSerialGroupStart: true,
-		isSerialGroupEnd: true,
+		isSerialGroupEnd:   true,
 	}
 }
 
 type SerialGroupTract[InputType, InnerType, OutputType Request] struct {
-	name string
-	head Tract[InputType, InnerType]
-	tail Tract[InnerType, OutputType]
+	name                                 string
+	head                                 Tract[InputType, InnerType]
+	tail                                 Tract[InnerType, OutputType]
 	isSerialGroupStart, isSerialGroupEnd bool
 }
 
@@ -34,10 +34,10 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Name() string {
 }
 
 func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
-	input Input[InputType],
-	output Output[OutputType],
+	input Input[RequestWrapper[InputType]],
+	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
-	link := Channel[InnerType](make(chan InnerType))
+	link := Channel[RequestWrapper[InnerType]](make(chan RequestWrapper[InnerType]))
 
 	headerStarter, err := p.head.Init(input, link)
 	if err != nil {
@@ -92,10 +92,10 @@ type Linker[InputType, InnerType, OutputType Request] struct {
 func (l Linker[InputType, InnerType, OutputType]) Link(
 	tail Tract[InnerType, OutputType],
 ) Tract[InputType, OutputType] {
-	if h, ok := l.head.(interface{isNotSerialGroupEnd()}); ok {
+	if h, ok := l.head.(interface{ isNotSerialGroupEnd() }); ok {
 		h.isNotSerialGroupEnd()
 	}
-	if t, ok := tail.(interface{isNotSerialGroupStart()}); ok {
+	if t, ok := tail.(interface{ isNotSerialGroupStart() }); ok {
 		t.isNotSerialGroupStart()
 	}
 	return NewSerialGroupTract(l.name, l.head, tail)
@@ -130,13 +130,13 @@ func (p *ParalellGroupTract[InputType, OutputType]) Name() string {
 }
 
 func (p *ParalellGroupTract[InputType, OutputType]) Init(
-	input Input[InputType],
-	output Output[OutputType],
+	input Input[RequestWrapper[InputType]],
+	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
 	starters := make([]TractStarter, len(p.tracts))
 	for i := range p.tracts {
 		var err error
-		starters[i], err = p.tracts[i].Init(input, nonCloseOutput[OutputType]{Output: output})
+		starters[i], err = p.tracts[i].Init(input, nonCloseOutput[RequestWrapper[OutputType]]{Output: output})
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize tract[%d] %q: %w", i, p.tracts[i].Name(), err)
 		}
@@ -192,15 +192,15 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Name() string {
 }
 
 func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
-	input Input[InputType],
-	output Output[OutputType],
+	input Input[RequestWrapper[InputType]],
+	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
-	links := make([]Channel[InnerType], len(p.tails))
+	links := make([]Channel[RequestWrapper[InnerType]], len(p.tails))
 	for i := range links {
-		links[i] = make(chan InnerType)
+		links[i] = make(chan RequestWrapper[InnerType])
 	}
 
-	headerStarter, err := p.head.Init(input, outputs[InnerType, Channel[InnerType]](links))
+	headerStarter, err := p.head.Init(input, outputs[InnerType, Channel[RequestWrapper[InnerType]]](links))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize head tract %q: %w", p.head.Name(), err)
 	}
@@ -208,7 +208,7 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 	tailStarters := make([]TractStarter, len(p.tails))
 	for i := range p.tails {
 		var err error
-		tailStarters[i], err = p.tails[i].Init(links[i], nonCloseOutput[OutputType]{Output: output})
+		tailStarters[i], err = p.tails[i].Init(links[i], nonCloseOutput[RequestWrapper[OutputType]]{Output: output})
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize tail tract[%d] %q: %w", i, p.tails[i].Name(), err)
 		}

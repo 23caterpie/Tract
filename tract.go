@@ -45,7 +45,10 @@ type Tract[InputType, OutputType Request] interface {
 	Name() string
 	// Init initializes the Tract. Must be called before calling Start().
 	// Once Start has been called, Init should not be called.
-	Init(Input[InputType], Output[OutputType]) (TractStarter, error)
+	Init(
+		Input[RequestWrapper[InputType]],
+		Output[RequestWrapper[OutputType]],
+	) (TractStarter, error)
 }
 
 type TractStarter interface {
@@ -59,6 +62,17 @@ type TractWaiter interface {
 	Wait()
 }
 
+func Init[InputType, OutputType Request](
+	input Input[InputType],
+	t Tract[InputType, OutputType],
+	output Output[OutputType],
+) (TractStarter, error) {
+	return t.Init(
+		NewRequestWrapperInput(input),
+		NewRequestWrapperOutput(output),
+	)
+}
+
 // Run runs a tract with a given input and output.
 // Returns an error if the tract failed to initialize.
 func Run[InputType, OutputType Request](
@@ -67,40 +81,6 @@ func Run[InputType, OutputType Request](
 	output Output[OutputType],
 ) error {
 	return NewTractRunner(input, tract, output).Run()
-}
-
-// NewTractRunner provides a simplified interface for runner a tract with a given input and output.
-func NewTractRunner[InputType, OutputType Request](
-	input Input[InputType],
-	tract Tract[InputType, OutputType],
-	output Output[OutputType],
-) *TractRunner[InputType, OutputType] {
-	return &TractRunner[InputType, OutputType]{
-		input:  input,
-		tract:  tract,
-		output: output,
-	}
-}
-
-type TractRunner[InputType, OutputType Request] struct {
-	input  Input[InputType]
-	tract  Tract[InputType, OutputType]
-	output Output[OutputType]
-}
-
-// Name returns the name of the tract.
-func (t *TractRunner[InputType, OutputType]) Name() string {
-	return t.tract.Name()
-}
-
-// Run runs the tract according to the documented usage of a tract using the runner's input and output.
-func (t *TractRunner[InputType, OutputType]) Run() error {
-	starter, err := t.tract.Init(t.input, t.output)
-	if err != nil {
-		return err
-	}
-	starter.Start().Wait()
-	return nil
 }
 
 // internal function wrappers

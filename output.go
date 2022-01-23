@@ -13,17 +13,23 @@ type Output[T Request] interface {
 }
 
 var (
-	_ Output[int64] = Channel[int64](nil)
-	_ Output[int64] = outputs[int64, Output[int64]](nil)
-	_ Output[int64] = nonCloseOutput[int64]{}
+	_ Output[int64]                 = Channel[int64](nil)
+	_ Output[RequestWrapper[int64]] = outputs[int64, Output[RequestWrapper[int64]]](nil)
+	_ Output[int64]                 = nonCloseOutput[int64]{}
+	_ Output[RequestWrapper[int64]] = NewRequestWrapperOutput(Output[int64](nil))
 )
 
-type outputs[T Request, D Output[T]] []D
+type outputs[T Request, D Output[RequestWrapper[T]]] []D
 
 // Put puts on all outputs.
-func (os outputs[T, D]) Put(t T) {
-	for _, o := range os {
-		o.Put(t)
+func (os outputs[T, D]) Put(req RequestWrapper[T]) {
+	lastOutputIndex := len(os) - 1
+	for i, o := range os {
+		if i == lastOutputIndex {
+			o.Put(req)
+		} else {
+			o.Put(req.Clone())
+		}
 	}
 }
 
@@ -42,3 +48,21 @@ type nonCloseOutput[T Request] struct {
 }
 
 func (c nonCloseOutput[_]) Close() {}
+
+func NewRequestWrapperOutput[T Request](base Output[T]) RequestWrapperOutput[T] {
+	return RequestWrapperOutput[T]{
+		base: base,
+	}
+}
+
+type RequestWrapperOutput[T Request] struct {
+	base Output[T]
+}
+
+func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
+	o.base.Put(r.base)
+}
+
+func (o RequestWrapperOutput[T]) Close() {
+	o.base.Close()
+}

@@ -55,3 +55,5 @@ TODO:
 * Focus on ease of use.
   - look into simplifying the external api.
 * assert package in tests?
+* add context to Work() method to be able to properly pass a context
+* add example of supplying a base context

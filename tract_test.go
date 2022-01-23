@@ -1,6 +1,7 @@
 package tract_test
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -8,27 +9,27 @@ import (
 	tract "github.com/23caterpie/Tract"
 )
 
-var _ tract.WorkerFactory[int64, string] = testWorkerFactory[int64, string]{}
+var _ tract.WorkerFactory[int64, string, testWorker[int64, string]] = testWorkerFactory[int64, string]{}
 
 type testWorkerFactory[InputType, OutputType tract.Request] struct {
 	flagMakeWorker func()
-	tract.WorkerCloser[InputType, OutputType]
+	testWorker[InputType, OutputType]
 }
 
-func (f testWorkerFactory[InputType, OutputType]) MakeWorker() (tract.WorkerCloser[InputType, OutputType], error) {
+func (f testWorkerFactory[InputType, OutputType]) MakeWorker() (testWorker[InputType, OutputType], error) {
 	f.flagMakeWorker()
-	return f.WorkerCloser, nil
+	return f.testWorker, nil
 }
 
 var _ tract.Worker[int64, string] = testWorker[int64, string]{}
 
 type testWorker[InputType, OutputType tract.Request] struct {
 	flagClose func()
-	work      func(InputType) (OutputType, bool)
+	work      func(context.Context, InputType) (OutputType, bool)
 }
 
-func (w testWorker[InputType, OutputType]) Work(i InputType) (OutputType, bool) {
-	return w.work(i)
+func (w testWorker[InputType, OutputType]) Work(ctx context.Context, i InputType) (OutputType, bool) {
+	return w.work(ctx, i)
 }
 
 func (w testWorker[InputType, OutputType]) Close() { w.flagClose() }
@@ -113,11 +114,11 @@ func TestWorkerTract(t *testing.T) {
 	)
 	// 10 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
-	workerTract := tract.NewWorkerTract[myInputType, myOutputType]("myWorkerTract", 1, testWorkerFactory[myInputType, myOutputType]{
+	workerTract := tract.NewWorkerTract[myInputType, myOutputType, testWorker[myInputType, myOutputType]]("myWorkerTract", 1, testWorkerFactory[myInputType, myOutputType]{
 		flagMakeWorker: func() { numberOfMadeWorkers++ },
-		WorkerCloser: testWorker[myInputType, myOutputType]{
+		testWorker: testWorker[myInputType, myOutputType]{
 			flagClose: func() { numberOfWorkersClosed++ },
-			work: func(_ myInputType) (myOutputType, bool) {
+			work: func(_ context.Context, _ myInputType) (myOutputType, bool) {
 				numberOfRequestsProcessed++
 				return myOutputType{}, true
 			},
@@ -153,7 +154,7 @@ func TestWorkerTract(t *testing.T) {
 		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
-	workerTractStarter, err := workerTract.Init(input, output)
+	workerTractStarter, err := tract.Init[myInputType, myOutputType](input, workerTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
@@ -238,21 +239,21 @@ func TestSerialGroupTract(t *testing.T) {
 	// 10 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
 	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
-		tract.NewWorkerTract[myInputType, myInnerType]("head", 1, testWorkerFactory[myInputType, myInnerType]{
+		tract.NewWorkerTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInputType, myInnerType]{
+			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ myInputType) (myInnerType, bool) {
+				work: func(_ context.Context, _ myInputType) (myInnerType, bool) {
 					atomic.AddInt64(&numberOfRequestsProcessed[0], 1)
 					return myInnerType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType]("tail", 2, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("tail", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInnerType, myOutputType]{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, _ myInnerType) (myOutputType, bool) {
 					atomic.AddInt64(&numberOfRequestsProcessed[1], 1)
 					return myOutputType{}, true
 				},
@@ -289,7 +290,7 @@ func TestSerialGroupTract(t *testing.T) {
 		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
-	myTractStarter, err := myTract.Init(input, output)
+	myTractStarter, err := tract.Init[myInputType, myOutputType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
@@ -371,31 +372,31 @@ func TestParalellGroupTract(t *testing.T) {
 	// 100 requests
 	input := newSourceTestInput(&numberOfInputGets, []myRequestType{99: {}})
 	myTract := tract.NewParalellGroupTract[myRequestType, myRequestType]("myParalellGroupTract",
-		tract.NewWorkerTract[myRequestType, myRequestType]("middle1", 1, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle1", 1, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myRequestType, myRequestType]{
+			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[0], 1)
 					return myRequestType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myRequestType, myRequestType]("middle2", 2, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle2", 2, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myRequestType, myRequestType]{
+			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[1], 1)
 					return myRequestType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myRequestType, myRequestType]("middle3", 4, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle3", 4, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myRequestType, myRequestType]{
+			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[2], 1)
 					return myRequestType{}, true
 				},
@@ -436,7 +437,7 @@ func TestParalellGroupTract(t *testing.T) {
 		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
-	myTractStarter, err := myTract.Init(input, output)
+	myTractStarter, err := tract.Init[myRequestType, myRequestType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
@@ -531,41 +532,41 @@ func TestFanOutGroupTract(t *testing.T) {
 	// 100 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{99: {}})
 	myTract := tract.NewFanOutGroupTract[myInputType, myInnerType, myOutputType]("myFanOutGroupTract",
-		tract.NewWorkerTract[myInputType, myInnerType]("head", 1, testWorkerFactory[myInputType, myInnerType]{
+		tract.NewWorkerTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInputType, myInnerType]{
+			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r myInputType) (myInnerType, bool) {
+				work: func(_ context.Context, r myInputType) (myInnerType, bool) {
 					atomic.AddInt64(&numberOfHeadRequestsProcessed, 1)
 					return myInnerType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType]("middle1", 2, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle1", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInnerType, myOutputType]{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[0], 1)
 					return myOutputType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType]("middle2", 4, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle2", 4, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInnerType, myOutputType]{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[1], 1)
 					return myOutputType{}, true
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType]("middle3", 8, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle3", 8, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			WorkerCloser: testWorker[myInnerType, myOutputType]{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[2], 1)
 					return myOutputType{}, true
 				},
@@ -606,7 +607,7 @@ func TestFanOutGroupTract(t *testing.T) {
 		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
-	myTractStarter, err := myTract.Init(input, output)
+	myTractStarter, err := tract.Init[myInputType, myOutputType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}

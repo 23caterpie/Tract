@@ -1,6 +1,7 @@
 package tract_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -8,8 +9,8 @@ import (
 )
 
 var (
-	_ tract.WorkerFactory[DatabaseArgs, DatabaseResults] = databaseWorkerFactory{}
-	_ tract.Worker[DatabaseArgs, DatabaseResults]        = &databaseWorker{}
+	_ tract.WorkerFactory[DatabaseArgs, DatabaseResults, *databaseWorker] = databaseWorkerFactory{}
+	_ tract.Worker[DatabaseArgs, DatabaseResults]                         = &databaseWorker{}
 )
 
 type (
@@ -19,7 +20,7 @@ type (
 
 func NewDatabaseWorkerFactory(
 	stmt *sql.Stmt, columnCount int,
-) tract.WorkerFactory[DatabaseArgs, DatabaseResults] {
+) tract.WorkerFactory[DatabaseArgs, DatabaseResults, *databaseWorker] {
 	return databaseWorkerFactory{
 		stmt:        stmt,
 		columnCount: columnCount,
@@ -31,7 +32,7 @@ type databaseWorkerFactory struct {
 	columnCount int
 }
 
-func (f databaseWorkerFactory) MakeWorker() (tract.WorkerCloser[DatabaseArgs, DatabaseResults], error) {
+func (f databaseWorkerFactory) MakeWorker() (*databaseWorker, error) {
 	results := make([]interface{}, f.columnCount)
 	resultsPtrs := make([]interface{}, len(results))
 	for i := range results {
@@ -53,8 +54,8 @@ type databaseWorker struct {
 	results, resultsPtrs []interface{}
 }
 
-func (w *databaseWorker) Work(args DatabaseArgs) (DatabaseResults, bool) {
-	err := w.stmt.QueryRow(args...).Scan(w.resultsPtrs...)
+func (w *databaseWorker) Work(ctx context.Context, args DatabaseArgs) (DatabaseResults, bool) {
+	err := w.stmt.QueryRowContext(ctx, args...).Scan(w.resultsPtrs...)
 	if err != nil {
 		// Handle error
 		return nil, false
@@ -87,7 +88,7 @@ func ExampleWorkerFactory() {
 	}
 	defer dbWorker.Close()
 
-	results, ok := dbWorker.Work([]interface{}{"foobar"})
+	results, ok := dbWorker.Work(context.Background(), []interface{}{"foobar"})
 	if !ok {
 		// Handle problem
 		return
