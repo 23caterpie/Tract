@@ -7,7 +7,7 @@ import (
 	tract "github.com/23caterpie/Tract"
 )
 
-func ExampleTract_Linker() {
+func ExampleLinker() {
 	var (
 		input         = &SliceArgReaderInput{arguments: []float64{0, 1, 256, 6561, 65536, 390625, 1679616, 5764801, 16777216, 43046721, 100000000}}
 		workerFactory = tract.NewFactoryFromWorker[float64, float64](SquareRootWorker{})

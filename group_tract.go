@@ -37,6 +37,13 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
+	if p.isSerialGroupStart {
+		input = newOpencensusGroupInput(p.name, input)
+	}
+	if p.isSerialGroupEnd {
+		output = newOpencensusGroupOutput(p.name, output)
+	}
+
 	link := Channel[RequestWrapper[InnerType]](make(chan RequestWrapper[InnerType]))
 
 	headerStarter, err := p.head.Init(input, link)
@@ -133,6 +140,8 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
+	input = newOpencensusGroupInput(p.name, input)
+	output = newOpencensusGroupOutput(p.name, output)
 	starters := make([]TractStarter, len(p.tracts))
 	for i := range p.tracts {
 		var err error
@@ -195,6 +204,8 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
+	input = newOpencensusGroupInput(p.name, input)
+	output = newOpencensusGroupOutput(p.name, output)
 	links := make([]Channel[RequestWrapper[InnerType]], len(p.tails))
 	for i := range links {
 		links[i] = make(chan RequestWrapper[InnerType])

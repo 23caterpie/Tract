@@ -43,8 +43,8 @@ func (p *workerTract[InputType, OutputType]) Init(
 		p.name,
 		p.size,
 		p.factory,
-		input,
-		output,
+		newOpencensusWorkerInput(p.name, input),
+		newOpencensusWorkerOutput(p.name, output),
 	)
 }
 
@@ -138,10 +138,15 @@ func process[InputType, OutputType Request](
 			break
 		}
 
-		outputRequest, shouldSend = worker.Work(inputRequest.meta.ctx, inputRequest.base)
+		outputRequest, shouldSend = worker.Work(
+			inputRequest.meta.opencensusData.context(),
+			inputRequest.base,
+		)
 
 		if shouldSend && output != nil {
 			output.Put(newRequestWrapper(outputRequest, inputRequest.meta))
+		} else {
+			// TODO: handle dangling spans and missing metrics here.
 		}
 	}
 }

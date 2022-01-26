@@ -60,6 +60,8 @@ type RequestWrapperOutput[T Request] struct {
 }
 
 func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
+	// Pop the output data as to leave no dangling spans.
+	r.meta.opencensusData.popOutputData()
 	o.base.Put(r.base)
 }
 
