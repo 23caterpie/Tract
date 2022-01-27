@@ -146,7 +146,9 @@ func process[InputType, OutputType Request](
 		if shouldSend && output != nil {
 			output.Put(newRequestWrapper(outputRequest, inputRequest.meta))
 		} else {
-			// TODO: handle dangling spans and missing metrics here.
+			// Handle dangling spans.
+			_ = inputRequest.meta.opencensusData.popAllOutputData()
+			// TODO: Add metrics here?
 		}
 	}
 }

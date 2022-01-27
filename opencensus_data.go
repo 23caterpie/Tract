@@ -3,6 +3,7 @@ package tract
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -42,7 +43,7 @@ func (d opencensusData) context() context.Context {
 	return d.ctx
 }
 
-func (d opencensusData) popInputData() time.Time {
+func (d *opencensusData) popInputData() time.Time {
 	if len(d.inputDataStack) == 0 {
 		return time.Time{}
 	}
@@ -52,7 +53,7 @@ func (d opencensusData) popInputData() time.Time {
 	return data.timestamp
 }
 
-func (d opencensusData) pushInputData(
+func (d *opencensusData) pushInputData(
 	ctx context.Context,
 	spanName string,
 	afterGet time.Time,
@@ -60,17 +61,18 @@ func (d opencensusData) pushInputData(
 	d.inputDataStack = append(d.inputDataStack, newOpencensusUnitData(ctx, spanName, afterGet))
 }
 
-func (d opencensusData) popOutputData() time.Time {
-	if len(d.outputDataStack) == 0 {
-		return time.Time{}
+func (d *opencensusData) popAllOutputData() time.Time {
+	var ts time.Time
+	for i := len(d.outputDataStack) - 1; i >= 0; i-- {
+		data := d.outputDataStack[i]
+		ts = data.timestamp
+		data.endSpan()
 	}
-	var data opencensusUnitData
-	d.outputDataStack, data = d.outputDataStack[:len(d.outputDataStack)-1], d.outputDataStack[len(d.outputDataStack)-1]
-	data.endSpan()
-	return data.timestamp
+	d.outputDataStack = nil
+	return ts
 }
 
-func (d opencensusData) pushOutputData(
+func (d *opencensusData) pushOutputData(
 	ctx context.Context,
 	spanName string,
 	beforePut time.Time,
@@ -78,15 +80,29 @@ func (d opencensusData) pushOutputData(
 	d.outputDataStack = append(d.outputDataStack, newOpencensusUnitData(ctx, spanName, beforePut))
 }
 
-func (d opencensusData) clone() opencensusData {
-	inputDataStack := make([]opencensusUnitData, len(d.inputDataStack))
-	copy(inputDataStack, d.inputDataStack)
-	outputDataStack := make([]opencensusUnitData, len(d.outputDataStack))
-	copy(outputDataStack, d.outputDataStack)
+func (d opencensusData) clone(amount int) opencensusData {
 	return opencensusData{
 		ctx:             d.ctx,
-		inputDataStack:  inputDataStack,
-		outputDataStack: outputDataStack,
+		inputDataStack:  cloneOpencensusUnitDataStack(d.inputDataStack, amount),
+		outputDataStack: cloneOpencensusUnitDataStack(d.outputDataStack, amount),
+	}
+}
+
+func (d opencensusData) block(amount int) {
+	blockOpencensusUnitDataStack(d.inputDataStack, amount)
+	blockOpencensusUnitDataStack(d.outputDataStack, amount)
+}
+
+func cloneOpencensusUnitDataStack(stack []opencensusUnitData, amount int) []opencensusUnitData {
+	newStack := make([]opencensusUnitData, len(stack))
+	copy(newStack, stack)
+	blockOpencensusUnitDataStack(newStack, amount)
+	return newStack
+}
+
+func blockOpencensusUnitDataStack(stack []opencensusUnitData, amount int) {
+	for i := range stack {
+		stack[i].blockEndSpan(amount)
 	}
 }
 
@@ -117,6 +133,18 @@ type opencensusUnitData struct {
 	ctx       context.Context
 	timestamp time.Time
 	endSpan   func()
+}
+
+func (d *opencensusUnitData) blockEndSpan(amount int) {
+	var (
+		remaining = int32(amount)
+		endSpan = d.endSpan
+	)
+	d.endSpan = func() {
+		if atomic.AddInt32(&remaining, -1) <= 0 {
+			endSpan()
+		}
+	}
 }
 
 var (
@@ -184,7 +212,7 @@ func (i opencensusInput[T]) Get() (RequestWrapper[T], bool) {
 		}
 	)
 	// Populate wait latency using last output time.
-	if outputTime := req.meta.opencensusData.popOutputData(); !outputTime.IsZero() {
+	if outputTime := req.meta.opencensusData.popAllOutputData(); !outputTime.IsZero() {
 		measurements = append(measurements,
 			i.waitLatency.M(float64(end.Sub(outputTime))/float64(time.Millisecond)),
 		)
@@ -246,7 +274,7 @@ func (i opencensusOutput[T]) Put(req RequestWrapper[T]) {
 	// Once request has been pushed, it must not be modified since another go routine may be using it.
 
 	// Take measurement based off the data we gathered above.
-	// Do it down here so we can get the Put() call throughas early as possible.
+	// Do it down here so we can get the Put() call through as early as possible.
 	measurements := []stats.Measurement{
 		// Populate output latency.
 		i.outputLatency.M(float64(end.Sub(start)) / float64(time.Millisecond)),

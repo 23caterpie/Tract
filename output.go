@@ -23,13 +23,9 @@ type outputs[T Request, D Output[RequestWrapper[T]]] []D
 
 // Put puts on all outputs.
 func (os outputs[T, D]) Put(req RequestWrapper[T]) {
-	lastOutputIndex := len(os) - 1
+	clones := req.Clone(len(os))
 	for i, o := range os {
-		if i == lastOutputIndex {
-			o.Put(req)
-		} else {
-			o.Put(req.Clone())
-		}
+		o.Put(clones[i])
 	}
 }
 
@@ -61,7 +57,8 @@ type RequestWrapperOutput[T Request] struct {
 
 func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
 	// Pop the output data as to leave no dangling spans.
-	r.meta.opencensusData.popOutputData()
+	_ = r.meta.opencensusData.popAllOutputData()
+	// TODO: Add metrics here?
 	o.base.Put(r.base)
 }
 

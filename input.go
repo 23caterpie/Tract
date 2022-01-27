@@ -18,6 +18,7 @@ var (
 // the base context for incoming requests.
 // This is the same concept as http.Server.BaseContext
 type BaseContext[T any] func(T) context.Context
+// TODO: add base time type, so that tracts can measure the first get wait time and a final tract all round latency.
 
 func NewRequestWrapperInput[T Request](
 	base Input[T],

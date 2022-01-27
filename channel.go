@@ -1,5 +1,9 @@
 package tract
 
+func NewChannel[T Request](c chan T) Channel[T] {
+	return Channel[T](c)
+}
+
 // Channel is a channel of requests.
 type Channel[T Request] chan T
 

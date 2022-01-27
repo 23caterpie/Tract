@@ -72,6 +72,10 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupEnd
 	p.isSerialGroupEnd = false
 }
 
+func (p *SerialGroupTract[InputType, InnerType, OutputType]) setSerialTractName(name string) {
+	p.name = name
+}
+
 func NewNamedLinker[InputType, InnerType, OutputType Request](
 	name string,
 	tract Tract[InputType, InnerType],
@@ -95,15 +99,22 @@ type Linker[InputType, InnerType, OutputType Request] struct {
 	head Tract[InputType, InnerType]
 }
 
-// TODO: fix naming propogation.
 func (l Linker[InputType, InnerType, OutputType]) Link(
 	tail Tract[InnerType, OutputType],
 ) Tract[InputType, OutputType] {
-	if h, ok := l.head.(interface{ isNotSerialGroupEnd() }); ok {
+	if h, _ := l.head.(interface{ isNotSerialGroupEnd() }); h != nil {
 		h.isNotSerialGroupEnd()
 	}
-	if t, ok := tail.(interface{ isNotSerialGroupStart() }); ok {
+	if t, _ := tail.(interface{ isNotSerialGroupStart() }); t != nil {
 		t.isNotSerialGroupStart()
+	}
+	if l.name != "" {
+		if h, _ := l.head.(interface{ setSerialTractName(string) }); h != nil {
+			h.setSerialTractName(l.name)
+		}
+		if t, _ := tail.(interface{ setSerialTractName(string) }); t != nil {
+			t.setSerialTractName(l.name)
+		}
 	}
 	return NewSerialGroupTract(l.name, l.head, tail)
 }

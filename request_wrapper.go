@@ -29,8 +29,17 @@ type RequestWrapper[T Request] struct {
 	meta requestWrapperMeta
 }
 
-func (r RequestWrapper[T]) Clone() RequestWrapper[T] {
-	return newRequestWrapper(r.base, r.meta.clone())
+func (r RequestWrapper[T]) Clone(times int) []RequestWrapper[T] {
+	clones := make([]RequestWrapper[T], times)
+	for i := range clones {
+		if i == 0 {
+			r.meta.opencensusData.block(times)
+			clones[i] = r
+		} else {
+			clones[i] = newRequestWrapper(r.base, r.meta.clone(times))
+		}
+	}
+	return clones
 }
 
 func newRequestWrapperMeta(ctx context.Context) requestWrapperMeta {
@@ -46,8 +55,8 @@ type requestWrapperMeta struct {
 	opencensusData opencensusData
 }
 
-func (m requestWrapperMeta) clone() requestWrapperMeta {
+func (m requestWrapperMeta) clone(amount int) requestWrapperMeta {
 	return requestWrapperMeta{
-		opencensusData: m.opencensusData.clone(),
+		opencensusData: m.opencensusData.clone(amount),
 	}
 }
