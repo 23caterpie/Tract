@@ -54,14 +54,14 @@ type databaseWorker struct {
 	results, resultsPtrs []interface{}
 }
 
-func (w *databaseWorker) Work(ctx context.Context, args DatabaseArgs) (DatabaseResults, bool) {
+func (w *databaseWorker) Work(ctx context.Context, args DatabaseArgs) (DatabaseResults, error) {
 	err := w.stmt.QueryRowContext(ctx, args...).Scan(w.resultsPtrs...)
 	if err != nil {
 		// Handle error
-		return nil, false
+		return nil, err
 	}
 
-	return append([]interface{}{}, w.results...), true
+	return append([]interface{}{}, w.results...), nil
 }
 
 func (w *databaseWorker) Close() {}
@@ -88,8 +88,8 @@ func ExampleWorkerFactory() {
 	}
 	defer dbWorker.Close()
 
-	results, ok := dbWorker.Work(context.Background(), []interface{}{"foobar"})
-	if !ok {
+	results, err := dbWorker.Work(context.Background(), []interface{}{"foobar"})
+	if err != nil {
 		// Handle problem
 		return
 	}

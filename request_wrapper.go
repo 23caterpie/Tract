@@ -105,7 +105,8 @@ func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
 	o.base.Put(r.base)
 	end := now()
 	// Pop the all data as to leave no dangling spans.
-	for !r.meta.opencensusData.popInputData().IsZero() {}
+	for !r.meta.opencensusData.popInputData().IsZero() {
+	}
 	_ = r.meta.opencensusData.popAllOutputData()
 	// Use base to creat base metrics and traces.
 	base := r.meta.opencensusData.baseData

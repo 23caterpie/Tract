@@ -90,10 +90,10 @@ func (d opencensusData) clone(amount int32) []opencensusData {
 	for i := range outputBlockCounts {
 		outputBlockCounts[i] = amount
 	}
-	
+
 	clones := make([]opencensusData, amount)
 	for i := range clones {
-		if i == len(clones) - 1 {
+		if i == len(clones)-1 {
 			d.baseData.blockEndSpan(&amount)
 			blockOpencensusUnitDataStack(d.inputDataStack, inputBlockCounts)
 			blockOpencensusUnitDataStack(d.outputDataStack, outputBlockCounts)
@@ -158,7 +158,7 @@ type opencensusUnitData struct {
 
 func (d *opencensusUnitData) blockEndSpan(amount *int32) {
 	var (
-		endSpan   = d.endSpan
+		endSpan = d.endSpan
 	)
 	d.endSpan = func() {
 		newAmount := atomic.AddInt32(amount, -1)

@@ -55,4 +55,3 @@ TODO:
 * Focus on ease of use.
   - look into simplifying the external api.
 * add example of supplying a base context
-* test open census stuff.

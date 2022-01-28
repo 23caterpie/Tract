@@ -25,10 +25,10 @@ var _ tract.Worker[int64, string] = testWorker[int64, string]{}
 
 type testWorker[InputType, OutputType tract.Request] struct {
 	flagClose func()
-	work      func(context.Context, InputType) (OutputType, bool)
+	work      func(context.Context, InputType) (OutputType, error)
 }
 
-func (w testWorker[InputType, OutputType]) Work(ctx context.Context, i InputType) (OutputType, bool) {
+func (w testWorker[InputType, OutputType]) Work(ctx context.Context, i InputType) (OutputType, error) {
 	return w.work(ctx, i)
 }
 
@@ -118,9 +118,9 @@ func TestWorkerTract(t *testing.T) {
 		flagMakeWorker: func() { numberOfMadeWorkers++ },
 		testWorker: testWorker[myInputType, myOutputType]{
 			flagClose: func() { numberOfWorkersClosed++ },
-			work: func(_ context.Context, _ myInputType) (myOutputType, bool) {
+			work: func(_ context.Context, _ myInputType) (myOutputType, error) {
 				numberOfRequestsProcessed++
-				return myOutputType{}, true
+				return myOutputType{}, nil
 			},
 		},
 	})
@@ -243,9 +243,9 @@ func TestSerialGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, _ myInputType) (myInnerType, bool) {
+				work: func(_ context.Context, _ myInputType) (myInnerType, error) {
 					atomic.AddInt64(&numberOfRequestsProcessed[0], 1)
-					return myInnerType{}, true
+					return myInnerType{}, nil
 				},
 			},
 		}),
@@ -253,9 +253,9 @@ func TestSerialGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, _ myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, _ myInnerType) (myOutputType, error) {
 					atomic.AddInt64(&numberOfRequestsProcessed[1], 1)
-					return myOutputType{}, true
+					return myOutputType{}, nil
 				},
 			},
 		}),
@@ -376,9 +376,9 @@ func TestParalellGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[0], 1)
-					return myRequestType{}, true
+					return myRequestType{}, nil
 				},
 			},
 		}),
@@ -386,9 +386,9 @@ func TestParalellGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[1], 1)
-					return myRequestType{}, true
+					return myRequestType{}, nil
 				},
 			},
 		}),
@@ -396,9 +396,9 @@ func TestParalellGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, _ myRequestType) (myRequestType, bool) {
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
 					atomic.AddInt64(&numberOfParalellRequestsProcessed[2], 1)
-					return myRequestType{}, true
+					return myRequestType{}, nil
 				},
 			},
 		}),
@@ -536,9 +536,9 @@ func TestFanOutGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, r myInputType) (myInnerType, bool) {
+				work: func(_ context.Context, r myInputType) (myInnerType, error) {
 					atomic.AddInt64(&numberOfHeadRequestsProcessed, 1)
-					return myInnerType{}, true
+					return myInnerType{}, nil
 				},
 			},
 		}),
@@ -546,9 +546,9 @@ func TestFanOutGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[0], 1)
-					return myOutputType{}, true
+					return myOutputType{}, nil
 				},
 			},
 		}),
@@ -556,9 +556,9 @@ func TestFanOutGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[1], 1)
-					return myOutputType{}, true
+					return myOutputType{}, nil
 				},
 			},
 		}),
@@ -566,9 +566,9 @@ func TestFanOutGroupTract(t *testing.T) {
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(_ context.Context, r myInnerType) (myOutputType, bool) {
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
 					atomic.AddInt64(&numberOfFanOutRequestsProcessed[2], 1)
-					return myOutputType{}, true
+					return myOutputType{}, nil
 				},
 			},
 		}),

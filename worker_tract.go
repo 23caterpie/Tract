@@ -135,7 +135,7 @@ func process[InputType, OutputType Request](
 ) {
 	var (
 		outputRequest OutputType
-		shouldSend    bool
+		workerErr    error
 
 		inputRequest RequestWrapper[InputType]
 		ok           bool
@@ -148,13 +148,13 @@ func process[InputType, OutputType Request](
 			break
 		}
 
-		outputRequest, shouldSend = worker.Work(
+		outputRequest, workerErr = worker.Work(
 			inputRequest.meta.opencensusData.context(),
 			inputRequest.base,
 		)
 		outputRequestWrapper := newRequestWrapper(outputRequest, inputRequest.meta)
 
-		if shouldSend && output != nil {
+		if workerErr == nil && output != nil {
 			output.Put(outputRequestWrapper)
 		} else {
 			// Does final operations on the base of the request wrapper.

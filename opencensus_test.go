@@ -145,8 +145,8 @@ func newTestOCWorker() tract.Worker[testOCRequest, testOCRequest] {
 
 type testOCWorker struct{}
 
-func (w testOCWorker) Work(ctx context.Context, r testOCRequest) (testOCRequest, bool) {
-	return r, true
+func (w testOCWorker) Work(ctx context.Context, r testOCRequest) (testOCRequest, error) {
+	return r, nil
 }
 
 func newTestOCOutput() tract.Output[testOCRequest] {

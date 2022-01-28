@@ -49,7 +49,7 @@ func newNoopOutput[T Request]() Output[T] {
 	return noopOutput[T]{}
 }
 
-type noopOutput[T Request] struct {}
+type noopOutput[T Request] struct{}
 
 func (noopOutput[T]) Put(T) {}
 

@@ -14,10 +14,9 @@ type WorkerFactory[InputType, OutputType Request, WorkerType Worker[InputType, O
 
 // Worker is an object that performs work potentially using it own resources and/or factory resources.
 type Worker[InputType, OutputType Request] interface {
-	// Work takes an input, performs an operation, and returns an output and a success flag.
-	// If the returned bool is false, that specifies that the returned request should be discarded.
-	// TODO: consider returning an error instead of a boolean.
-	Work(context.Context, InputType) (OutputType, bool)
+	// Work takes an input, performs an operation, and returns an output and potentially an error.
+	// If the returned error is not nil, that specifies that the returned request should be discarded.
+	Work(context.Context, InputType) (OutputType, error)
 }
 
 // Closer is something that closes its own locally scoped resources.

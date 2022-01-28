@@ -26,8 +26,8 @@ func NewSquareRootWorker() tract.Worker[float64, float64] {
 // SquareRootWorker performs `math.Sqrt` on its argument.
 type SquareRootWorker struct{}
 
-func (w SquareRootWorker) Work(_ context.Context, r float64) (float64, bool) {
-	return math.Sqrt(r), true
+func (w SquareRootWorker) Work(_ context.Context, r float64) (float64, error) {
+	return math.Sqrt(r), nil
 }
 
 func (w SquareRootWorker) Close() {}
