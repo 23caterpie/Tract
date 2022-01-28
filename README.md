@@ -54,6 +54,5 @@ processes through its tract, and passed along to the fanout tract's output.
 TODO:
 * Focus on ease of use.
   - look into simplifying the external api.
-* assert package in tests?
 * add example of supplying a base context
 * test open census stuff.

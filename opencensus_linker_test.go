@@ -83,6 +83,7 @@ func TestOpencensusLinkerTract(t *testing.T) {
 		worker2Tags      = map[string]string{tract.WorkerName.Name(): workerName2, customTag.Name(): customTagValue}
 		worker3Tags      = map[string]string{tract.WorkerName.Name(): workerName3, customTag.Name(): customTagValue}
 		serialGroup1Tags = map[string]string{tract.GroupName.Name(): serialGroupName1, customTag.Name(): customTagValue}
+		baseGroupTags    = map[string]string{tract.GroupName.Name(): "octract/base", customTag.Name(): customTagValue}
 	)
 
 	// Test Metrics
@@ -109,14 +110,26 @@ func TestOpencensusLinkerTract(t *testing.T) {
 	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, serialGroup1Tags)) // no wait metrics for the outer group since there is no previous output to start the wait.
 	assert.Equal(t, int64(1), getPoint(metrics, testGroupWorkLatencyView.Name, serialGroup1Tags))
 	assert.Equal(t, int64(1), getPoint(metrics, testGroupOutputLatencyView.Name, serialGroup1Tags))
+	// base metrics
+	assert.Equal(t, nil, getPoint(metrics, testGroupInputLatencyView.Name, baseGroupTags)) // no input metrics for base group.
+	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, baseGroupTags))  // no wait metrics for base group.
+	assert.Equal(t, int64(1), getPoint(metrics, testGroupWorkLatencyView.Name, baseGroupTags))
+	assert.Equal(t, nil, getPoint(metrics, testGroupOutputLatencyView.Name, baseGroupTags)) // no output metrics for base group.
 
 	// Test Traces
-	assert.Len(t, traceExporter.spans, 8)
+	assert.Len(t, traceExporter.spans, 9)
 	spansByName := map[string]*trace.SpanData{}
-	for _, span := range traceExporter.spans {
+	var traceID string
+	for i, span := range traceExporter.spans {
 		spansByName[span.Name] = span
+		if i == 0 {
+			traceID = span.TraceID.String()
+		} else {
+			assert.Equal(t, traceID, span.TraceID.String(), "all spans must share the same trace id")
+		}
 	}
-	assert.Len(t, spansByName, 8)
+	assert.Len(t, spansByName, 9)
+	baseSpan := spansByName["octract/base"]
 	serialGroup1WorkSpan := spansByName["octract/group/test-serial-group-1/work"]
 	worker1WorkSpan := spansByName["octract/worker/test-worker-1/work"]
 	worker1WaitSpan := spansByName["octract/worker/test-worker-1/wait"]
@@ -126,13 +139,23 @@ func TestOpencensusLinkerTract(t *testing.T) {
 	worker3WaitSpan := spansByName["octract/worker/test-worker-3/wait"]
 	serialGroup1WaitSpan := spansByName["octract/group/test-serial-group-1/wait"]
 
+	var baseSpanID string
+	if assert.NotNil(t, baseSpan) {
+		// Test the base span has no parent.
+		const rootSpanID = "0000000000000000"
+		assert.Equal(t, rootSpanID, baseSpan.ParentSpanID.String())
+		// Test for children.
+		assert.Equal(t, 2, baseSpan.ChildSpanCount)
+		// Assign the base span for its children's tests.
+		baseSpanID = baseSpan.SpanID.String()
+	}
+
 	var serialGroup1WorkSpanID string
 	// Group spans
 	if assert.NotNil(t, serialGroup1WorkSpan) && assert.NotNil(t, serialGroup1WaitSpan) {
-		// Test these spans are siblings with no parent.
-		const rootSpanID = "0000000000000000"
-		assert.Equal(t, rootSpanID, serialGroup1WorkSpan.ParentSpanID.String())
-		assert.Equal(t, rootSpanID, serialGroup1WaitSpan.ParentSpanID.String())
+		// Test these spans are siblings with the same parent.
+		assert.Equal(t, baseSpanID, serialGroup1WorkSpan.ParentSpanID.String())
+		assert.Equal(t, baseSpanID, serialGroup1WaitSpan.ParentSpanID.String())
 		// Test these sibling spans were born in the right order.
 		assert.True(t, serialGroup1WorkSpan.StartTime.Before(serialGroup1WaitSpan.StartTime), "serial group tract work must start before its wait starts")
 		// Test for children.

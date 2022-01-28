@@ -28,14 +28,11 @@ func (t *TractRunner[InputType, OutputType]) Name() string {
 
 // Run runs the tract according to the documented usage of a tract using the runner's input and output.
 func (t *TractRunner[InputType, OutputType]) Run() error {
-	inputWrapper := NewRequestWrapperInput(t.input)
+	inputWrapper, outputWrapper := NewRequestWrapperLinks(t.input, t.output)
 	if t.WithBaseContext != nil {
 		inputWrapper.BaseContext = t.WithBaseContext
 	}
-	starter, err := t.tract.Init(
-		inputWrapper,
-		NewRequestWrapperOutput(t.output),
-	)
+	starter, err := t.tract.Init(inputWrapper, outputWrapper)
 	if err != nil {
 		return err
 	}

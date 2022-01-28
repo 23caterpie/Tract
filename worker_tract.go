@@ -139,6 +139,8 @@ func process[InputType, OutputType Request](
 
 		inputRequest RequestWrapper[InputType]
 		ok           bool
+
+		deadLetterOutput = newRequestWrapperOutput(newNoopOutput[OutputType]())
 	)
 	for {
 		inputRequest, ok = input.Get()
@@ -150,13 +152,13 @@ func process[InputType, OutputType Request](
 			inputRequest.meta.opencensusData.context(),
 			inputRequest.base,
 		)
+		outputRequestWrapper := newRequestWrapper(outputRequest, inputRequest.meta)
 
 		if shouldSend && output != nil {
-			output.Put(newRequestWrapper(outputRequest, inputRequest.meta))
+			output.Put(outputRequestWrapper)
 		} else {
-			// Handle dangling spans.
-			_ = inputRequest.meta.opencensusData.popAllOutputData()
-			// TODO: Add metrics here?
+			// Does final operations on the base of the request wrapper.
+			deadLetterOutput.Put(outputRequestWrapper)
 		}
 	}
 }

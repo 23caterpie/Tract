@@ -81,6 +81,7 @@ func TestOpencensusFanoutTract(t *testing.T) {
 		worker2Tags      = map[string]string{tract.WorkerName.Name(): workerName2, customTag.Name(): customTagValue}
 		worker3Tags      = map[string]string{tract.WorkerName.Name(): workerName3, customTag.Name(): customTagValue}
 		fanoutGroup1Tags = map[string]string{tract.GroupName.Name(): fanoutGroupName1, customTag.Name(): customTagValue}
+		baseGroupTags    = map[string]string{tract.GroupName.Name(): "octract/base", customTag.Name(): customTagValue}
 	)
 
 	// Test Metrics
@@ -107,22 +108,27 @@ func TestOpencensusFanoutTract(t *testing.T) {
 	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, fanoutGroup1Tags)) // no wait metrics for the outer group since there is no previous output to start the wait.
 	assert.Equal(t, int64(2), getPoint(metrics, testGroupWorkLatencyView.Name, fanoutGroup1Tags))
 	assert.Equal(t, int64(2), getPoint(metrics, testGroupOutputLatencyView.Name, fanoutGroup1Tags))
+	// base metrics
+	assert.Equal(t, nil, getPoint(metrics, testGroupInputLatencyView.Name, baseGroupTags)) // no input metrics for base group.
+	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, baseGroupTags))  // no wait metrics for base group.
+	assert.Equal(t, int64(2), getPoint(metrics, testGroupWorkLatencyView.Name, baseGroupTags))
+	assert.Equal(t, nil, getPoint(metrics, testGroupOutputLatencyView.Name, baseGroupTags)) // no output metrics for base group.
 
 	// Test Traces
 	// assert.Equal(t, "uncomment to see things", traceExporter.spans)
-	assert.Len(t, traceExporter.spans, 9)
+	assert.Len(t, traceExporter.spans, 10)
 	spansByName := map[string][]*trace.SpanData{}
-	// TODO: consider making a common parent from the final wait.
-	// var traceID string
-	for _, span := range traceExporter.spans {
+	var traceID string
+	for i, span := range traceExporter.spans {
 		spansByName[span.Name] = append(spansByName[span.Name], span)
-		// if i == 0 {
-		// 	traceID = span.TraceID.String()
-		// } else {
-		// 	assert.Equal(t, traceID, span.TraceID.String(), "all spans must share the same trace id")
-		// }
+		if i == 0 {
+			traceID = span.TraceID.String()
+		} else {
+			assert.Equal(t, traceID, span.TraceID.String(), "all spans must share the same trace id")
+		}
 	}
-	assert.Len(t, spansByName, 8)
+	assert.Len(t, spansByName, 9)
+	baseSpan := spansByName["octract/base"][0]
 	fanoutGroup1WorkSpan := spansByName["octract/group/test-fanout-group-1/work"][0]
 	worker1WorkSpan := spansByName["octract/worker/test-worker-1/work"][0]
 	worker1WaitSpan := spansByName["octract/worker/test-worker-1/wait"][0]
@@ -133,14 +139,24 @@ func TestOpencensusFanoutTract(t *testing.T) {
 	fanoutGroup1WaitSpan1 := spansByName["octract/group/test-fanout-group-1/wait"][0]
 	fanoutGroup1WaitSpan2 := spansByName["octract/group/test-fanout-group-1/wait"][1]
 
+	var baseSpanID string
+	if assert.NotNil(t, baseSpan) {
+		// Test the base span has no parent.
+		const rootSpanID = "0000000000000000"
+		assert.Equal(t, rootSpanID, baseSpan.ParentSpanID.String())
+		// Test for children.
+		assert.Equal(t, 2, baseSpan.ChildSpanCount)
+		// Assign the base span for its children's tests.
+		baseSpanID = baseSpan.SpanID.String()
+	}
+
 	var fanoutGroup1WorkSpanID string
 	// Group spans
 	if assert.NotNil(t, fanoutGroup1WorkSpan) && assert.NotNil(t, fanoutGroup1WaitSpan1) && assert.NotNil(t, fanoutGroup1WaitSpan2) {
-		// Test these spans are siblings with no parent.
-		const rootSpanID = "0000000000000000"
-		assert.Equal(t, rootSpanID, fanoutGroup1WorkSpan.ParentSpanID.String())
-		assert.Equal(t, rootSpanID, fanoutGroup1WaitSpan1.ParentSpanID.String())
-		assert.Equal(t, rootSpanID, fanoutGroup1WaitSpan2.ParentSpanID.String())
+		// Test these spans are siblings with the same parent.
+		assert.Equal(t, baseSpanID, fanoutGroup1WorkSpan.ParentSpanID.String())
+		assert.Equal(t, baseSpanID, fanoutGroup1WaitSpan1.ParentSpanID.String())
+		assert.Equal(t, baseSpanID, fanoutGroup1WaitSpan2.ParentSpanID.String())
 		// Test these sibling spans were born in the right order.
 		assert.True(t, fanoutGroup1WorkSpan.StartTime.Before(fanoutGroup1WaitSpan1.StartTime), "fanout group tract work must start before its wait starts")
 		assert.True(t, fanoutGroup1WorkSpan.StartTime.Before(fanoutGroup1WaitSpan2.StartTime), "fanout group tract work must start before its wait starts")

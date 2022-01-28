@@ -11,18 +11,24 @@ import (
 	"go.opencensus.io/trace"
 )
 
-type opencensusData struct {
-	// tracing spans are attached to the context for workers to make child spans off of.
-	// If a BaseContext function is being used, then this context will be what it specifies,
-	// so deadlines, values, or anything on the context will be passed to workers as well.
-	ctx context.Context
+func newOpencensusData(ctx context.Context) opencensusData {
+	return opencensusData{
+		baseData: newOpencensusUnitData(ctx, `octract/base`, now()),
+	}
+}
 
+type opencensusData struct {
 	// The below opencensus unit data stacks are used for metrics and tracing.
 	// They are used to replicate a stack frame of data that would be passed if each sibling tract were called in sequence
 	// and tracts inside of group tracts were nested functions.
 	// This can be used to show the lifecycle of a request processing through a tract through the perspective of the request itself
 	// allowing spans to have the same parent child relationships they would have in a non concurrent environment.
 
+	// baseData is opencensusUnitData that is set on request wrapper input and used on request wrapper output.
+	// It serves as the base data all other stack data is based on.
+	// If a BaseContext function is being used in the request wrapper input, then its context will be what it specifies,
+	// so deadlines, values, or anything on the context will be passed to workers as well.
+	baseData opencensusUnitData
 	// inputDataStack is a stack of opencensusUnitData that is pushed to on input and popped from on outputs.
 	inputDataStack []opencensusUnitData
 	// outputDataStack is a stack of opencensusUnitData that is pushed to on output and emptied from on inputs.
@@ -35,7 +41,7 @@ func (d opencensusData) context() context.Context {
 	if len(d.inputDataStack) > 0 {
 		return d.inputDataStack[len(d.inputDataStack)-1].ctx
 	}
-	return d.ctx
+	return d.baseData.ctx
 }
 
 func (d *opencensusData) popInputData() time.Time {
@@ -76,14 +82,17 @@ func (d *opencensusData) pushOutputData(
 }
 
 func (d opencensusData) clone(amount int) opencensusData {
+	baseData := d.baseData
+	baseData.blockEndSpan(amount)
 	return opencensusData{
-		ctx:             d.ctx,
+		baseData:        baseData,
 		inputDataStack:  cloneOpencensusUnitDataStack(d.inputDataStack, amount),
 		outputDataStack: cloneOpencensusUnitDataStack(d.outputDataStack, amount),
 	}
 }
 
-func (d opencensusData) block(amount int) {
+func (d *opencensusData) block(amount int) {
+	d.baseData.blockEndSpan(amount)
 	blockOpencensusUnitDataStack(d.inputDataStack, amount)
 	blockOpencensusUnitDataStack(d.outputDataStack, amount)
 }

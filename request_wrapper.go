@@ -1,6 +1,9 @@
 package tract
 
 import "context"
+import "time"
+import "go.opencensus.io/stats"
+import "go.opencensus.io/tag"
 
 func WrapRequestWithContext[T Request](
 	ctx context.Context,
@@ -44,9 +47,7 @@ func (r RequestWrapper[T]) Clone(times int) []RequestWrapper[T] {
 
 func newRequestWrapperMeta(ctx context.Context) requestWrapperMeta {
 	return requestWrapperMeta{
-		opencensusData: opencensusData{
-			ctx: ctx,
-		},
+		opencensusData: newOpencensusData(ctx),
 	}
 }
 
@@ -59,4 +60,72 @@ func (m requestWrapperMeta) clone(amount int) requestWrapperMeta {
 	return requestWrapperMeta{
 		opencensusData: m.opencensusData.clone(amount),
 	}
+}
+
+// Input/Output
+
+func NewRequestWrapperLinks[T, D Request](
+	baseInput Input[T],
+	baseOutput Output[D],
+) (
+	RequestWrapperInput[T],
+	RequestWrapperOutput[D],
+) {
+	return newRequestWrapperInput(baseInput),
+		newRequestWrapperOutput(baseOutput)
+}
+
+// BaseContext specifies a function that returns
+// the base context for incoming requests.
+// This is the same concept as http.Server.BaseContext
+type BaseContext[T any] func(T) context.Context
+
+func newRequestWrapperInput[T Request](
+	base Input[T],
+) RequestWrapperInput[T] {
+	return RequestWrapperInput[T]{
+		base:        base,
+		BaseContext: func(T) context.Context { return context.Background() },
+	}
+}
+
+type RequestWrapperInput[T Request] struct {
+	base        Input[T]
+	BaseContext BaseContext[T]
+}
+
+func (i RequestWrapperInput[T]) Get() (RequestWrapper[T], bool) {
+	req, ok := i.base.Get()
+	return WrapRequestWithContext(i.BaseContext(req), req), ok
+}
+
+func newRequestWrapperOutput[T Request](base Output[T]) RequestWrapperOutput[T] {
+	return RequestWrapperOutput[T]{
+		base: base,
+	}
+}
+
+type RequestWrapperOutput[T Request] struct {
+	base Output[T]
+}
+
+func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
+	o.base.Put(r.base)
+	end := now()
+	// Pop the all data as to leave no dangling spans.
+	for !r.meta.opencensusData.popInputData().IsZero() {}
+	_ = r.meta.opencensusData.popAllOutputData()
+	// Use base to creat base metrics and traces.
+	base := r.meta.opencensusData.baseData
+	base.endSpan()
+	stats.RecordWithTags(base.ctx,
+		[]tag.Mutator{
+			tag.Upsert(GroupName, "octract/base"),
+		},
+		GroupWorkLatency.M(float64(end.Sub(base.timestamp))/float64(time.Millisecond)),
+	)
+}
+
+func (o RequestWrapperOutput[T]) Close() {
+	o.base.Close()
 }

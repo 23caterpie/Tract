@@ -16,7 +16,7 @@ var (
 	_ Output[int64]                 = Channel[int64](nil)
 	_ Output[RequestWrapper[int64]] = outputs[int64, Output[RequestWrapper[int64]]](nil)
 	_ Output[int64]                 = nonCloseOutput[int64]{}
-	_ Output[RequestWrapper[int64]] = NewRequestWrapperOutput(Output[int64](nil))
+	_ Output[RequestWrapper[int64]] = newRequestWrapperOutput(Output[int64](nil))
 )
 
 type outputs[T Request, D Output[RequestWrapper[T]]] []D
@@ -45,23 +45,12 @@ type nonCloseOutput[T Request] struct {
 
 func (c nonCloseOutput[_]) Close() {}
 
-func NewRequestWrapperOutput[T Request](base Output[T]) RequestWrapperOutput[T] {
-	return RequestWrapperOutput[T]{
-		base: base,
-	}
+func newNoopOutput[T Request]() Output[T] {
+	return noopOutput[T]{}
 }
 
-type RequestWrapperOutput[T Request] struct {
-	base Output[T]
-}
+type noopOutput[T Request] struct {}
 
-func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
-	// Pop the output data as to leave no dangling spans.
-	_ = r.meta.opencensusData.popAllOutputData()
-	// TODO: Add metrics here?
-	o.base.Put(r.base)
-}
+func (noopOutput[T]) Put(T) {}
 
-func (o RequestWrapperOutput[T]) Close() {
-	o.base.Close()
-}
+func (noopOutput[T]) Close() {}

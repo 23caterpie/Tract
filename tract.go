@@ -67,10 +67,7 @@ func Init[InputType, OutputType Request](
 	t Tract[InputType, OutputType],
 	output Output[OutputType],
 ) (TractStarter, error) {
-	return t.Init(
-		NewRequestWrapperInput(input),
-		NewRequestWrapperOutput(output),
-	)
+	return t.Init(NewRequestWrapperLinks(input, output))
 }
 
 // Run runs a tract with a given input and output.
