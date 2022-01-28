@@ -10,9 +10,9 @@ import (
 
 // These are compiler checks to make sure our implementations satisfy the tract Workers interface
 var (
-	_ tract.Input[float64]           = &SliceArgReaderInput{}
+	_ tract.Input[float64]           = NewSliceArgReaderInput([]float64{1, 2, 3})
 	_ tract.Worker[float64, float64] = SquareRootWorker{}
-	_ tract.Output[float64]          = &SliceResultsWriterOutput{}
+	_ tract.Output[float64]          = &SliceResultsWriterOutput[float64]{}
 )
 
 // NewSquareRootWorker returns a SquareRootWorker as a tract.Worker type more ready for type inference.
@@ -32,6 +32,13 @@ func (w SquareRootWorker) Work(_ context.Context, r float64) (float64, error) {
 
 func (w SquareRootWorker) Close() {}
 
+func NewSliceArgReaderInput[T any](args []T) *SliceArgReaderInput[T] {
+	return &SliceArgReaderInput[T]{
+		arguments: args,
+		mutex:     sync.Mutex{},
+	}
+}
+
 // SliceArgReaderInput is first stage of the tract.
 // First stage workers typically will generate or retrive data from some sort of source,
 // such as a queue, file, or user provided data, and store that data on the request's Data field.
@@ -44,18 +51,18 @@ func (w SquareRootWorker) Close() {}
 // When there are no more items, false is returned.
 // Since SliceArgReaderInput is being used as its own factory, calls to `Work()` must be thread
 // safe, thus a mutex is being used.
-type SliceArgReaderInput struct {
-	arguments []float64
+type SliceArgReaderInput[T any] struct {
+	arguments []T
 	mutex     sync.Mutex
 }
 
-func (w *SliceArgReaderInput) Get() (float64, bool) {
+func (w *SliceArgReaderInput[T]) Get() (T, bool) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
+	var output T
 	if len(w.arguments) == 0 {
-		return 0, false
+		return output, false
 	}
-	var output float64
 	output, w.arguments = w.arguments[0], w.arguments[1:]
 	return output, true
 }
@@ -65,15 +72,15 @@ func (w *SliceArgReaderInput) Get() (float64, bool) {
 // SliceResultsWriterOutput gets the data from the request and pushes it onto a list of results.
 // Since SliceResultsWriterOutput is being used as its own factory, calls to `Work()` must be thread
 // safe, thus a mutex is being used.
-type SliceResultsWriterOutput struct {
-	results []float64
+type SliceResultsWriterOutput[T any] struct {
+	results []T
 	mutex   sync.Mutex
 }
 
-func (w *SliceResultsWriterOutput) Put(r float64) {
+func (w *SliceResultsWriterOutput[T]) Put(t T) {
 	w.mutex.Lock()
-	w.results = append(w.results, r)
+	w.results = append(w.results, t)
 	w.mutex.Unlock()
 }
 
-func (w *SliceResultsWriterOutput) Close() {}
+func (w *SliceResultsWriterOutput[T]) Close() {}

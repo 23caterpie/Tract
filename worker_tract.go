@@ -135,7 +135,7 @@ func process[InputType, OutputType Request](
 ) {
 	var (
 		outputRequest OutputType
-		workerErr    error
+		workerErr     error
 
 		inputRequest RequestWrapper[InputType]
 		ok           bool
