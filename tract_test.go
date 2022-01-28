@@ -114,7 +114,7 @@ func TestWorkerTract(t *testing.T) {
 	)
 	// 10 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
-	workerTract := tract.NewWorkerTract[myInputType, myOutputType, testWorker[myInputType, myOutputType]]("myWorkerTract", 1, testWorkerFactory[myInputType, myOutputType]{
+	workerTract := tract.NewWorkerFactoryTract[myInputType, myOutputType, testWorker[myInputType, myOutputType]]("myWorkerTract", 1, testWorkerFactory[myInputType, myOutputType]{
 		flagMakeWorker: func() { numberOfMadeWorkers++ },
 		testWorker: testWorker[myInputType, myOutputType]{
 			flagClose: func() { numberOfWorkersClosed++ },
@@ -239,7 +239,7 @@ func TestSerialGroupTract(t *testing.T) {
 	// 10 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
 	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
-		tract.NewWorkerTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
+		tract.NewWorkerFactoryTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -249,7 +249,7 @@ func TestSerialGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("tail", 2, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("tail", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -372,7 +372,7 @@ func TestParalellGroupTract(t *testing.T) {
 	// 100 requests
 	input := newSourceTestInput(&numberOfInputGets, []myRequestType{99: {}})
 	myTract := tract.NewParalellGroupTract[myRequestType, myRequestType]("myParalellGroupTract",
-		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle1", 1, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle1", 1, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -382,7 +382,7 @@ func TestParalellGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle2", 2, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle2", 2, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -392,7 +392,7 @@ func TestParalellGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle3", 4, testWorkerFactory[myRequestType, myRequestType]{
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle3", 4, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -532,7 +532,7 @@ func TestFanOutGroupTract(t *testing.T) {
 	// 100 requests
 	input := newSourceTestInput(&numberOfInputGets, []myInputType{99: {}})
 	myTract := tract.NewFanOutGroupTract[myInputType, myInnerType, myOutputType]("myFanOutGroupTract",
-		tract.NewWorkerTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
+		tract.NewWorkerFactoryTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -542,7 +542,7 @@ func TestFanOutGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle1", 2, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle1", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -552,7 +552,7 @@ func TestFanOutGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle2", 4, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle2", 4, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
@@ -562,7 +562,7 @@ func TestFanOutGroupTract(t *testing.T) {
 				},
 			},
 		}),
-		tract.NewWorkerTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle3", 8, testWorkerFactory[myInnerType, myOutputType]{
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle3", 8, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
 			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },

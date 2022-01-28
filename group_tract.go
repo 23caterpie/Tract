@@ -14,19 +14,16 @@ func NewSerialGroupTract[InputType, InnerType, OutputType Request](
 	tail Tract[InnerType, OutputType],
 ) *SerialGroupTract[InputType, InnerType, OutputType] {
 	return &SerialGroupTract[InputType, InnerType, OutputType]{
-		name:               name,
-		head:               head,
-		tail:               tail,
-		isSerialGroupStart: true,
-		isSerialGroupEnd:   true,
+		name: name,
+		head: head,
+		tail: tail,
 	}
 }
 
 type SerialGroupTract[InputType, InnerType, OutputType Request] struct {
-	name                                 string
-	head                                 Tract[InputType, InnerType]
-	tail                                 Tract[InnerType, OutputType]
-	isSerialGroupStart, isSerialGroupEnd bool
+	name string
+	head Tract[InputType, InnerType]
+	tail Tract[InnerType, OutputType]
 }
 
 func (p *SerialGroupTract[InputType, InnerType, OutputType]) Name() string {
@@ -37,12 +34,14 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
-	if p.isSerialGroupStart {
-		input = newOpencensusGroupInput(p.name, input)
-	}
-	if p.isSerialGroupEnd {
-		output = newOpencensusGroupOutput(p.name, output)
-	}
+	input, output = newOpencensusGroupLinks(p.name, input, output)
+
+	// if h, _ := p.head.(linkerPart); h != nil {
+	// 	h.setSerialTractName(p.name)
+	// }
+	// if t, _ := p.tail.(linkerPart); t != nil {
+	// 	t.setSerialTractName(p.name)
+	// }
 
 	link := Channel[RequestWrapper[InnerType]](make(chan RequestWrapper[InnerType]))
 
@@ -64,17 +63,35 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	}), nil
 }
 
-func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupStart() {
-	p.isSerialGroupStart = false
-}
+// type linkerPart interface {
+// 	isNotSerialGroupStart(string)
+// 	isNotSerialGroupEnd(string)
+// 	setSerialTractName(string)
+// }
 
-func (p *SerialGroupTract[InputType, InnerType, OutputType]) isNotSerialGroupEnd() {
-	p.isSerialGroupEnd = false
-}
+// func (p *SerialGroupTract[InputType, InnerType, OutputType]) extendSerialGroupStart(name string) {
+// 	if name != "" && p.name == "" {
+// 		p.name = name
+// 	}
+// 	if p.name == name {
+// 		p.isSerialGroupStart = false
+// 	}
+// }
 
-func (p *SerialGroupTract[InputType, InnerType, OutputType]) setSerialTractName(name string) {
-	p.name = name
-}
+// func (p *SerialGroupTract[InputType, InnerType, OutputType]) extendSerialGroupEnd(name string) {
+// 	if name != "" && p.name == "" {
+// 		p.name = name
+// 	}
+// 	if p.name == name {
+// 		p.isSerialGroupEnd = false
+// 	}
+// }
+
+// func (p *SerialGroupTract[InputType, InnerType, OutputType]) setSerialTractName(name string) {
+// 	if name != "" && p.name == "" {
+// 		p.name = name
+// 	}
+// }
 
 func NewNamedLinker[InputType, InnerType, OutputType Request](
 	name string,
@@ -102,20 +119,12 @@ type Linker[InputType, InnerType, OutputType Request] struct {
 func (l Linker[InputType, InnerType, OutputType]) Link(
 	tail Tract[InnerType, OutputType],
 ) Tract[InputType, OutputType] {
-	if h, _ := l.head.(interface{ isNotSerialGroupEnd() }); h != nil {
-		h.isNotSerialGroupEnd()
-	}
-	if t, _ := tail.(interface{ isNotSerialGroupStart() }); t != nil {
-		t.isNotSerialGroupStart()
-	}
-	if l.name != "" {
-		if h, _ := l.head.(interface{ setSerialTractName(string) }); h != nil {
-			h.setSerialTractName(l.name)
-		}
-		if t, _ := tail.(interface{ setSerialTractName(string) }); t != nil {
-			t.setSerialTractName(l.name)
-		}
-	}
+	// if h, _ := l.head.(linkerPart); h != nil {
+	// 	h.extendSerialGroupEnd(l.name)
+	// }
+	// if t, _ := tail.(linkerPart); t != nil {
+	// 	t.extendSerialGroupStart(l.name)
+	// }
 	return NewSerialGroupTract(l.name, l.head, tail)
 }
 
@@ -151,8 +160,7 @@ func (p *ParalellGroupTract[InputType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
-	input = newOpencensusGroupInput(p.name, input)
-	output = newOpencensusGroupOutput(p.name, output)
+	input, output = newOpencensusGroupLinks(p.name, input, output)
 	starters := make([]TractStarter, len(p.tracts))
 	for i := range p.tracts {
 		var err error
@@ -215,8 +223,7 @@ func (p *FanOutGroupTract[InputType, InnerType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
-	input = newOpencensusGroupInput(p.name, input)
-	output = newOpencensusGroupOutput(p.name, output)
+	input, output = newOpencensusGroupLinks(p.name, input, output)
 	links := make([]Channel[RequestWrapper[InnerType]], len(p.tails))
 	for i := range links {
 		links[i] = make(chan RequestWrapper[InnerType])

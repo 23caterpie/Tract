@@ -15,6 +15,11 @@ var (
 	_ tract.Output[float64]          = &SliceResultsWriterOutput{}
 )
 
+// NewSquareRootWorker returns a SquareRootWorker as a tract.Worker type more ready for type inference.
+func NewSquareRootWorker() tract.Worker[float64, float64] {
+	return SquareRootWorker{}
+}
+
 // SquareRootWorker is a middle stage worker in a tract.
 // Middle stage workers typically will get arguments from the request's Data field
 // then perfrom an operation, and store the results back to the same request's Data field.

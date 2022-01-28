@@ -16,9 +16,7 @@ func ExampleTract_workerTract() {
 
 	err := tract.Run[float64, float64](
 		input,
-		tract.NewWorkerTract("square root", 4,
-			tract.NewFactoryFromWorker[float64, float64](SquareRootWorker{}),
-		),
+		tract.NewWorkerTract("square root", 4, NewSquareRootWorker()),
 		&output,
 	)
 	if err != nil {

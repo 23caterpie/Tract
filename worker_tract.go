@@ -5,9 +5,9 @@ import (
 	"sync"
 )
 
-// NewWorkerTract makes a new tract that will spin up @size number of workers generated from @workerFactory
+// NewWorkerFactoryTract makes a new tract that will spin up @size number of workers generated from @workerFactory
 // that get from the input and put to the output of the tract.
-func NewWorkerTract[InputType, OutputType Request, WorkerType Worker[InputType, OutputType]](
+func NewWorkerFactoryTract[InputType, OutputType Request, WorkerType Worker[InputType, OutputType]](
 	name string,
 	size int,
 	workerFactory WorkerFactory[InputType, OutputType, WorkerType],
@@ -18,6 +18,17 @@ func NewWorkerTract[InputType, OutputType Request, WorkerType Worker[InputType, 
 		size:    size,
 	}
 	return p
+}
+
+// NewWorkerTract makes a new tract that will spin up @size number of @workers
+// @worker's Work() method must be  thread safe.
+// that get from the input and put to the output of the tract.
+func NewWorkerTract[InputType, OutputType Request](
+	name string,
+	size int,
+	worker Worker[InputType, OutputType],
+) Tract[InputType, OutputType] {
+	return NewWorkerFactoryTract(name, size, NewFactoryFromWorker(worker))
 }
 
 type workerTract[InputType, OutputType Request] struct {
@@ -39,17 +50,16 @@ func (p *workerTract[InputType, OutputType]) Init(
 	input Input[RequestWrapper[InputType]],
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
+	input, output = newOpencensusWorkerLinks(p.name, input, output)
 	return newInitializedWorkerTract(
-		p.name,
 		p.size,
 		p.factory,
-		newOpencensusWorkerInput(p.name, input),
-		newOpencensusWorkerOutput(p.name, output),
+		input,
+		output,
 	)
 }
 
 func newInitializedWorkerTract[InputType, OutputType Request](
-	name string,
 	size int,
 	factory WorkerFactory[InputType, OutputType, Worker[InputType, OutputType]],
 	input Input[RequestWrapper[InputType]],
@@ -57,7 +67,6 @@ func newInitializedWorkerTract[InputType, OutputType Request](
 ) (*initializedWorkerTract[InputType, OutputType], error) {
 	// Make all the  workers.
 	p := initializedWorkerTract[InputType, OutputType]{
-		name:    name,
 		input:   input,
 		output:  output,
 		workers: make([]Worker[InputType, OutputType], size),
@@ -75,7 +84,6 @@ func newInitializedWorkerTract[InputType, OutputType Request](
 }
 
 type initializedWorkerTract[InputType, OutputType Request] struct {
-	name string
 	// Input used by all workers
 	input Input[RequestWrapper[InputType]]
 	// Output used by all workers
