@@ -3,7 +3,7 @@ package tract
 import (
 	"context"
 	"fmt"
-	// "sync/atomic"
+	"sync/atomic"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -81,32 +81,47 @@ func (d *opencensusData) pushOutputData(
 	d.outputDataStack = append(d.outputDataStack, newOpencensusUnitData(ctx, spanName, beforePut))
 }
 
-func (d opencensusData) clone(amount int) opencensusData {
-	baseData := d.baseData
-	baseData.blockEndSpan(amount)
-	return opencensusData{
-		baseData:        baseData,
-		inputDataStack:  cloneOpencensusUnitDataStack(d.inputDataStack, amount),
-		outputDataStack: cloneOpencensusUnitDataStack(d.outputDataStack, amount),
+func (d opencensusData) clone(amount int32) []opencensusData {
+	inputBlockCounts := make([]int32, len(d.inputDataStack))
+	for i := range inputBlockCounts {
+		inputBlockCounts[i] = amount
 	}
+	outputBlockCounts := make([]int32, len(d.outputDataStack))
+	for i := range outputBlockCounts {
+		outputBlockCounts[i] = amount
+	}
+	
+	clones := make([]opencensusData, amount)
+	for i := range clones {
+		if i == len(clones) - 1 {
+			d.baseData.blockEndSpan(&amount)
+			blockOpencensusUnitDataStack(d.inputDataStack, inputBlockCounts)
+			blockOpencensusUnitDataStack(d.outputDataStack, outputBlockCounts)
+			clones[i] = d
+		} else {
+			baseData := d.baseData
+			baseData.blockEndSpan(&amount)
+			clones[i] = opencensusData{
+				baseData:        baseData,
+				inputDataStack:  cloneOpencensusUnitDataStack(d.inputDataStack, inputBlockCounts),
+				outputDataStack: cloneOpencensusUnitDataStack(d.outputDataStack, outputBlockCounts),
+			}
+		}
+	}
+
+	return clones
 }
 
-func (d *opencensusData) block(amount int) {
-	d.baseData.blockEndSpan(amount)
-	blockOpencensusUnitDataStack(d.inputDataStack, amount)
-	blockOpencensusUnitDataStack(d.outputDataStack, amount)
-}
-
-func cloneOpencensusUnitDataStack(stack []opencensusUnitData, amount int) []opencensusUnitData {
+func cloneOpencensusUnitDataStack(stack []opencensusUnitData, amounts []int32) []opencensusUnitData {
 	newStack := make([]opencensusUnitData, len(stack))
 	copy(newStack, stack)
-	blockOpencensusUnitDataStack(newStack, amount)
+	blockOpencensusUnitDataStack(newStack, amounts)
 	return newStack
 }
 
-func blockOpencensusUnitDataStack(stack []opencensusUnitData, amount int) {
+func blockOpencensusUnitDataStack(stack []opencensusUnitData, amounts []int32) {
 	for i := range stack {
-		stack[i].blockEndSpan(amount)
+		stack[i].blockEndSpan(&amounts[i])
 	}
 }
 
@@ -141,16 +156,16 @@ type opencensusUnitData struct {
 	endSpan   func()
 }
 
-func (d *opencensusUnitData) blockEndSpan(amount int) {
-	// var (
-	// 	remaining = int32(amount)
-	// 	endSpan   = d.endSpan
-	// )
-	// d.endSpan = func() {
-	// 	if atomic.AddInt32(&remaining, -1) <= 0 {
-	// 		endSpan()
-	// 	}
-	// }
+func (d *opencensusUnitData) blockEndSpan(amount *int32) {
+	var (
+		endSpan   = d.endSpan
+	)
+	d.endSpan = func() {
+		newAmount := atomic.AddInt32(amount, -1)
+		if newAmount <= 0 {
+			endSpan()
+		}
+	}
 }
 
 var (

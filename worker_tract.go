@@ -158,6 +158,7 @@ func process[InputType, OutputType Request](
 			output.Put(outputRequestWrapper)
 		} else {
 			// Does final operations on the base of the request wrapper.
+			// TODO: test this case.
 			deadLetterOutput.Put(outputRequestWrapper)
 		}
 	}

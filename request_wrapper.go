@@ -32,15 +32,13 @@ type RequestWrapper[T Request] struct {
 	meta requestWrapperMeta
 }
 
-func (r RequestWrapper[T]) Clone(times int) []RequestWrapper[T] {
-	clones := make([]RequestWrapper[T], times)
-	for i := range clones {
-		if i == 0 {
-			r.meta.opencensusData.block(times)
-			clones[i] = r
-		} else {
-			clones[i] = newRequestWrapper(r.base, r.meta.clone(times))
-		}
+func (r RequestWrapper[T]) Clone(times int32) []RequestWrapper[T] {
+	ocDatas := r.meta.opencensusData.clone(times)
+	clones := make([]RequestWrapper[T], len(ocDatas))
+	for i := range ocDatas {
+		req := r
+		req.meta.opencensusData = ocDatas[i]
+		clones[i] = req
 	}
 	return clones
 }
@@ -54,12 +52,6 @@ func newRequestWrapperMeta(ctx context.Context) requestWrapperMeta {
 type requestWrapperMeta struct {
 	// opencensusData is a collection of data used to generate metrics and traces for tracts.
 	opencensusData opencensusData
-}
-
-func (m requestWrapperMeta) clone(amount int) requestWrapperMeta {
-	return requestWrapperMeta{
-		opencensusData: m.opencensusData.clone(amount),
-	}
 }
 
 // Input/Output

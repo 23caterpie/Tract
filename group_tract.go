@@ -35,14 +35,6 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	output Output[RequestWrapper[OutputType]],
 ) (TractStarter, error) {
 	input, output = newOpencensusGroupLinks(p.name, input, output)
-
-	// if h, _ := p.head.(linkerPart); h != nil {
-	// 	h.setSerialTractName(p.name)
-	// }
-	// if t, _ := p.tail.(linkerPart); t != nil {
-	// 	t.setSerialTractName(p.name)
-	// }
-
 	link := Channel[RequestWrapper[InnerType]](make(chan RequestWrapper[InnerType]))
 
 	headerStarter, err := p.head.Init(input, link)
@@ -62,36 +54,6 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 		})
 	}), nil
 }
-
-// type linkerPart interface {
-// 	isNotSerialGroupStart(string)
-// 	isNotSerialGroupEnd(string)
-// 	setSerialTractName(string)
-// }
-
-// func (p *SerialGroupTract[InputType, InnerType, OutputType]) extendSerialGroupStart(name string) {
-// 	if name != "" && p.name == "" {
-// 		p.name = name
-// 	}
-// 	if p.name == name {
-// 		p.isSerialGroupStart = false
-// 	}
-// }
-
-// func (p *SerialGroupTract[InputType, InnerType, OutputType]) extendSerialGroupEnd(name string) {
-// 	if name != "" && p.name == "" {
-// 		p.name = name
-// 	}
-// 	if p.name == name {
-// 		p.isSerialGroupEnd = false
-// 	}
-// }
-
-// func (p *SerialGroupTract[InputType, InnerType, OutputType]) setSerialTractName(name string) {
-// 	if name != "" && p.name == "" {
-// 		p.name = name
-// 	}
-// }
 
 func NewNamedLinker[InputType, InnerType, OutputType Request](
 	name string,
@@ -119,12 +81,6 @@ type Linker[InputType, InnerType, OutputType Request] struct {
 func (l Linker[InputType, InnerType, OutputType]) Link(
 	tail Tract[InnerType, OutputType],
 ) Tract[InputType, OutputType] {
-	// if h, _ := l.head.(linkerPart); h != nil {
-	// 	h.extendSerialGroupEnd(l.name)
-	// }
-	// if t, _ := tail.(linkerPart); t != nil {
-	// 	t.extendSerialGroupStart(l.name)
-	// }
 	return NewSerialGroupTract(l.name, l.head, tail)
 }
 

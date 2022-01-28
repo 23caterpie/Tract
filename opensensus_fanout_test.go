@@ -145,14 +145,16 @@ func TestOpencensusFanoutTract(t *testing.T) {
 		const rootSpanID = "0000000000000000"
 		assert.Equal(t, rootSpanID, baseSpan.ParentSpanID.String())
 		// Test for children.
-		assert.Equal(t, 2, baseSpan.ChildSpanCount)
+		assert.Equal(t, 3, baseSpan.ChildSpanCount)
 		// Assign the base span for its children's tests.
 		baseSpanID = baseSpan.SpanID.String()
 	}
 
 	var fanoutGroup1WorkSpanID string
 	// Group spans
-	if assert.NotNil(t, fanoutGroup1WorkSpan) && assert.NotNil(t, fanoutGroup1WaitSpan1) && assert.NotNil(t, fanoutGroup1WaitSpan2) {
+	if assert.NotNil(t, fanoutGroup1WorkSpan) &&
+		assert.NotNil(t, fanoutGroup1WaitSpan1) &&
+		assert.NotNil(t, fanoutGroup1WaitSpan2) {
 		// Test these spans are siblings with the same parent.
 		assert.Equal(t, baseSpanID, fanoutGroup1WorkSpan.ParentSpanID.String())
 		assert.Equal(t, baseSpanID, fanoutGroup1WaitSpan1.ParentSpanID.String())
@@ -160,18 +162,21 @@ func TestOpencensusFanoutTract(t *testing.T) {
 		// Test these sibling spans were born in the right order.
 		assert.True(t, fanoutGroup1WorkSpan.StartTime.Before(fanoutGroup1WaitSpan1.StartTime), "fanout group tract work must start before its wait starts")
 		assert.True(t, fanoutGroup1WorkSpan.StartTime.Before(fanoutGroup1WaitSpan2.StartTime), "fanout group tract work must start before its wait starts")
-		// Test for children.
-		// TODO: this should be 6 but is 4 or 5 in tests sometimes... WHY?
-		// assert.Equal(t, 6, fanoutGroup1WorkSpan.ChildSpanCount)
+		// Test for children: note that ChildSpanCount will only increment if the child is added before this span has closed.
+		// So this tests that we don't close until the children have been created.
+		assert.Equal(t, 6, fanoutGroup1WorkSpan.ChildSpanCount)
 		assert.Equal(t, 0, fanoutGroup1WaitSpan1.ChildSpanCount)
 		assert.Equal(t, 0, fanoutGroup1WaitSpan2.ChildSpanCount)
 		// Assign the work span for its children's tests.
 		fanoutGroup1WorkSpanID = fanoutGroup1WorkSpan.SpanID.String()
 	}
 	// Sibling worker spans
-	if assert.NotNil(t, worker1WorkSpan) && assert.NotNil(t, worker1WaitSpan) &&
-		assert.NotNil(t, worker2WorkSpan) && assert.NotNil(t, worker2WaitSpan) &&
-		assert.NotNil(t, worker3WorkSpan) && assert.NotNil(t, worker3WaitSpan) {
+	if assert.NotNil(t, worker1WorkSpan) &&
+		assert.NotNil(t, worker1WaitSpan) &&
+		assert.NotNil(t, worker2WorkSpan) &&
+		assert.NotNil(t, worker2WaitSpan) &&
+		assert.NotNil(t, worker3WorkSpan) &&
+		assert.NotNil(t, worker3WaitSpan) {
 		// Test these spans are siblings with the fanout work span as their parent.
 		assert.Equal(t, fanoutGroup1WorkSpanID, worker1WorkSpan.ParentSpanID.String())
 		assert.Equal(t, fanoutGroup1WorkSpanID, worker1WaitSpan.ParentSpanID.String())
