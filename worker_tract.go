@@ -158,7 +158,7 @@ func process[InputType, OutputType Request](
 			output.Put(outputRequestWrapper)
 		} else {
 			// Does final operations on the base of the request wrapper.
-			// TODO: test this case.
+			// NOTE: consider putting error as status on the trace and/or counting error in metric.
 			deadLetterOutput.Put(outputRequestWrapper)
 		}
 	}

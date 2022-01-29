@@ -2,6 +2,7 @@ package tract_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	tract "github.com/23caterpie/Tract"
@@ -147,6 +148,16 @@ type testOCWorker struct{}
 
 func (w testOCWorker) Work(ctx context.Context, r testOCRequest) (testOCRequest, error) {
 	return r, nil
+}
+
+func newTestOCErrorWorker() tract.Worker[testOCRequest, testOCRequest] {
+	return testOCErrorWorker{}
+}
+
+type testOCErrorWorker struct{}
+
+func (w testOCErrorWorker) Work(ctx context.Context, r testOCRequest) (testOCRequest, error) {
+	return r, errors.New("bad bad bad")
 }
 
 func newTestOCOutput() tract.Output[testOCRequest] {
