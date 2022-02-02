@@ -22,7 +22,7 @@ type WorkerTractConfig struct {
 	Size int
 }
 
-func (c WorkerTractConfig) Flags() []cli.Flag {
+func (c *WorkerTractConfig) Flags() []cli.Flag {
 	tractSizeFlagName := "tract-" + c.name + "-size"
 	tractSizeFlagEnvar := strings.ToUpper(strings.Replace(tractSizeFlagName, "-", "_", -1))
 	return []cli.Flag{
@@ -37,11 +37,35 @@ func (c WorkerTractConfig) Flags() []cli.Flag {
 
 func NewWorkerTract[InputType, OutputType tract.Request](
 	config WorkerTractConfig,
-	workerFactory tract.WorkerFactory[InputType, OutputType],
+	worker tract.Worker[InputType, OutputType],
 ) tract.Tract[InputType, OutputType] {
-	return tract.NewWorkerTract(
-		config.name,
-		config.Size,
-		workerFactory,
-	)
+	return tract.NewWorkerTract(config.name, config.Size, worker)
+}
+
+func NewWorkerFactoryTract[InputType, OutputType tract.Request, WorkerType tract.Worker[InputType, OutputType]](
+	config WorkerTractConfig,
+	workerFactory tract.WorkerFactory[InputType, OutputType, WorkerType],
+) tract.Tract[InputType, OutputType] {
+	return tract.NewWorkerFactoryTract(config.name, config.Size, workerFactory)
+}
+
+func NewWorkerFuncTract[InputType, OutputType tract.Request](
+	config WorkerTractConfig,
+	f tract.WorkerFunc[InputType, OutputType],
+) tract.Tract[InputType, OutputType] {
+	return tract.NewWorkerFuncTract(config.name, config.Size, f)
+}
+
+func NewBasicWorkerFuncTract[InputType, OutputType tract.Request](
+	config WorkerTractConfig,
+	f tract.BasicWorkerFunc[InputType, OutputType],
+) tract.Tract[InputType, OutputType] {
+	return tract.NewBasicWorkerFuncTract(config.name, config.Size, f)
+}
+
+func NewErrorWorkerFuncTract[InputType, OutputType tract.Request](
+	config WorkerTractConfig,
+	f tract.ErrorWorkerFunc[InputType, OutputType],
+) tract.Tract[InputType, OutputType] {
+	return tract.NewErrorWorkerFuncTract(config.name, config.Size, f)
 }

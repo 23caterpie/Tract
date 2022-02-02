@@ -88,6 +88,10 @@ type RequestWrapperInput[T Request] struct {
 
 func (i RequestWrapperInput[T]) Get() (RequestWrapper[T], bool) {
 	req, ok := i.base.Get()
+	if !ok {
+		// cannot safely call i.BaseContext on the request.
+		return newRequestWrapper(req, requestWrapperMeta{}), ok
+	}
 	return WrapRequestWithContext(i.BaseContext(req), req), ok
 }
 
