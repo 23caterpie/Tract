@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os/signal"
-	"golang.org/x/sys/unix"
+	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+
+	"golang.org/x/sys/unix"
 
 	tract "github.com/23caterpie/Tract"
 	"github.com/23caterpie/Tract/urfavtract"
@@ -26,12 +29,12 @@ func main() {
 		log.Println("Exited with error:", err.Error())
 		os.Exit(1)
 	}
+	fmt.Println("DONE")
 }
 
-func newRunner() runner {
-	return runner{
+func newRunner() *runner {
+	return &runner{
 		kafkaConsumerConfig: newKafkaConsumerConfig(),
-		// TODO: look into these not parsing.
 		parseWorkerConfig:   urfavtract.NewWorkerTractConfig("parse"),
 		sqrtWorkerConfig:    urfavtract.NewWorkerTractConfig("sqrt"),
 		writeWorkerConfig:   urfavtract.NewWorkerTractConfig("write"),
@@ -40,10 +43,13 @@ func newRunner() runner {
 
 type runner struct {
 	// TODO: add zipkin and promethius configs.
-	kafkaConsumerConfig *kafkaConsumerConfig
+	kafkaConsumerConfig kafkaConsumerConfig
 	parseWorkerConfig   urfavtract.WorkerTractConfig
 	sqrtWorkerConfig    urfavtract.WorkerTractConfig
 	writeWorkerConfig   urfavtract.WorkerTractConfig
+	tracingConfig       TracingConfig
+	metricsConfig       MetricsConfig
+	serviceServerConfig ServiceServerConfig
 }
 
 func (r *runner) flags() []cli.Flag {
@@ -52,6 +58,9 @@ func (r *runner) flags() []cli.Flag {
 		r.parseWorkerConfig.Flags(),
 		r.sqrtWorkerConfig.Flags(),
 		r.writeWorkerConfig.Flags(),
+		r.tracingConfig.flags(),
+		r.metricsConfig.flags(),
+		r.serviceServerConfig.flags(),
 	}
 	flags := make([]cli.Flag, 0)
 	for _, flagList := range flagLists {
@@ -60,8 +69,33 @@ func (r *runner) flags() []cli.Flag {
 	return flags
 }
 
-func (r runner) action(*cli.Context) error {
+func (r *runner) action(*cli.Context) error {
 	fmt.Printf("config: %+#v\n", r)
+
+	// Setup Tracing
+	err := r.tracingConfig.Apply()
+	if err != nil {
+		return fmt.Errorf("error applying tracing config: %w", err)
+	}
+
+	// Setup Metrics
+	prometheusExporter, err := r.metricsConfig.Apply()
+	if err != nil {
+		return fmt.Errorf("error applying metrics config: %w", err)
+	}
+
+	// Setup HTTP Server
+	server := r.serviceServerConfig.GetServer(prometheusExporter)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Println("error running http server")
+		}
+	}()
+
 	// declaritively define the tract.
 	myTract := tract.NewNamedLinker[request, parsedRequest, request](
 		"process_messages",
@@ -103,5 +137,12 @@ func (r runner) action(*cli.Context) error {
 	// Kafka consumer has stopped, wait for tract to finish.
 	close(requests)
 	tractWaiter.Wait()
+
+	// Shutdown HTTP Server.
+	err = server.Shutdown(context.Background())
+	if err != nil {
+		log.Println("error shutting down http server")
+	}
+	wg.Wait()
 	return nil
 }

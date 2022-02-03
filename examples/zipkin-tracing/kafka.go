@@ -12,8 +12,8 @@ import (
 	"go.opencensus.io/trace"
 )
 
-func newKafkaConsumerConfig() *kafkaConsumerConfig {
-	return &kafkaConsumerConfig{
+func newKafkaConsumerConfig() kafkaConsumerConfig {
+	return kafkaConsumerConfig{
 		config: sarama.NewConfig(),
 	}
 }
@@ -31,19 +31,19 @@ func (c *kafkaConsumerConfig) flags() []cli.Flag {
 			Name:        "kafka-brokers",
 			EnvVars:     []string{"KAFKA_BROKERS"},
 			Destination: &c.brokers,
-			Required: true,
+			Required:    true,
 		},
 		&cli.StringFlag{
 			Name:        "kafka-consumer-group-name",
 			EnvVars:     []string{"KAFKA_CONSUMER_GROUP_NAME"},
 			Destination: &c.consumerGroupName,
-			Required: true,
+			Required:    true,
 		},
 		&cli.StringSliceFlag{
 			Name:        "kafka-topics",
 			EnvVars:     []string{"KAFKA_TOPICS"},
 			Destination: &c.topics,
-			Required: true,
+			Required:    true,
 		},
 	}
 }

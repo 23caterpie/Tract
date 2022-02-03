@@ -12,13 +12,12 @@ services:
       TRACT_PARSE_SIZE: "1"
       TRACT_SQRT_SIZE: "2"
       TRACT_WRITE_SIZE: "1"
-
-      SERVICE_ADDR: ":8081"
-      OPENCENSUS_SERVICE_NAME: "zipkin-tracing-example"
+      # HTTP Server
+      SERVICE_SERVER_ADDR: ":8081"
       # Metrics
-      ENABLE_PROMETHEUS_METRICS: "true"
+      PROMETHEUS_SERVICE_NAME: "zipkin_tracing_example"
       # Tracing
-      ENABLE_ZIPKIN_TRACING: "true"
+      ZIPKIN_SERVICE_NAME: "zipkin-tracing-example"
       ZIPKIN_SERVER_ADDR: "http://zipkin:9411/api/v2/spans"
       TRACING_SAMPLE_RATE: "1.0"
     depends_on:
@@ -26,6 +25,11 @@ services:
         condition: service_healthy
       zipkin:
         condition: service_started
+    healthcheck:
+      test: "curl --fail localhost:8081/healthcheck"
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
   kafka-local:
     image: wurstmeister/kafka:2.12-2.2.2

@@ -127,8 +127,8 @@ var (
 	}
 )
 
-func RegisterDefaultViews() {
-	view.Register(
+func RegisterDefaultViews() error {
+	return view.Register(
 		WorkerWorkLatencyView,
 		WorkerWaitLatencyView,
 		WorkerInputLatencyView,
