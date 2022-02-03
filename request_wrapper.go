@@ -5,7 +5,7 @@ import "time"
 import "go.opencensus.io/stats"
 import "go.opencensus.io/tag"
 
-func WrapRequestWithContext[T Request](
+func wrapRequestWithContext[T Request](
 	ctx context.Context,
 	base T,
 ) RequestWrapper[T] {
@@ -32,7 +32,7 @@ type RequestWrapper[T Request] struct {
 	meta requestWrapperMeta
 }
 
-func (r RequestWrapper[T]) Clone(times int32) []RequestWrapper[T] {
+func (r RequestWrapper[T]) clone(times int32) []RequestWrapper[T] {
 	ocDatas := r.meta.opencensusData.clone(times)
 	clones := make([]RequestWrapper[T], len(ocDatas))
 	for i := range ocDatas {
@@ -56,6 +56,7 @@ type requestWrapperMeta struct {
 
 // Input/Output
 
+// NewRequestWrapperLinks takes a base input and output and converts them into the input and output needed for tract.(Tract).Init().
 func NewRequestWrapperLinks[T, D Request](
 	baseInput Input[T],
 	baseOutput Output[D],
@@ -81,6 +82,8 @@ func newRequestWrapperInput[T Request](
 	}
 }
 
+// RequestWrapperInput wraps requests with wrapper information used for metrics/tracing as an Input to a tract.
+// If BaseContext is assigned, then contexts from the request may be used for metrics/tracing.
 type RequestWrapperInput[T Request] struct {
 	base        Input[T]
 	BaseContext BaseContext[T]
@@ -92,7 +95,7 @@ func (i RequestWrapperInput[T]) Get() (RequestWrapper[T], bool) {
 		// cannot safely call i.BaseContext on the request.
 		return newRequestWrapper(req, requestWrapperMeta{}), ok
 	}
-	return WrapRequestWithContext(i.BaseContext(req), req), ok
+	return wrapRequestWithContext(i.BaseContext(req), req), ok
 }
 
 func newRequestWrapperOutput[T Request](base Output[T]) RequestWrapperOutput[T] {
@@ -101,12 +104,16 @@ func newRequestWrapperOutput[T Request](base Output[T]) RequestWrapperOutput[T] 
 	}
 }
 
+// RequestWrapperOutput unwraps requests as an Output to a tract.
+// Base metrics/traces are handled here.
 type RequestWrapperOutput[T Request] struct {
 	base Output[T]
 }
 
 func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
-	o.base.Put(r.base)
+	if o.base != nil {
+		o.base.Put(r.base)
+	}
 	end := now()
 	// Pop the all data as to leave no dangling spans.
 	for !r.meta.opencensusData.popInputData().IsZero() {
@@ -117,12 +124,14 @@ func (o RequestWrapperOutput[T]) Put(r RequestWrapper[T]) {
 	base.endSpan()
 	stats.RecordWithTags(base.ctx,
 		[]tag.Mutator{
-			tag.Upsert(GroupName, "octract/base"),
+			tag.Upsert(GroupName, baseSpanName),
 		},
 		GroupWorkLatency.M(float64(end.Sub(base.timestamp))/float64(time.Millisecond)),
 	)
 }
 
 func (o RequestWrapperOutput[T]) Close() {
-	o.base.Close()
+	if o.base != nil {
+		o.base.Close()
+	}
 }

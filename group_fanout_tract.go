@@ -2,14 +2,12 @@ package tract
 
 import "fmt"
 
-// NewFanOutGroupTract makes a new tract that consists muliple other tracts.
+// NewFanOutGroupTract makes a new tract that consists of multiple other tracts.
 // Each request this tract receives is routed to all of its inner tracts.
 // All requests proccessed by the inner tracts are routed to the same output.
-// This Tract should not be the first tract in a group as it has no machanism
-// of closing on it's own. Aka it's input must be set to something.
 //     ------------------
 //     | / ( Tract0 ) \ |
-//  -> | - ( Tract1 ) - | ->
+//  -> | - ( Tract1 ) - | -> -> -> ... N times
 //     | \ ( Tract2 ) / |
 //     |     ...        |
 //     ------------------

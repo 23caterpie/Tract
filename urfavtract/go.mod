@@ -2,8 +2,6 @@ module github.com/23caterpie/Tract/urfavtract
 
 go 1.18
 
-replace github.com/23caterpie/Tract => ./..
-
 require (
 	github.com/23caterpie/Tract v1.0.0
 	github.com/urfave/cli/v2 v2.3.0

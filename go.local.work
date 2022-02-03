@@ -1,5 +1,9 @@
 go 1.18
 
+replace (
+	github.com/23caterpie/Tract => ./
+)
+
 use (
 	.
 	urfavtract

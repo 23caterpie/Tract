@@ -23,7 +23,7 @@ type outputs[T Request, D Output[RequestWrapper[T]]] []D
 
 // Put puts on all outputs.
 func (os outputs[T, D]) Put(req RequestWrapper[T]) {
-	clones := req.Clone(int32(len(os)))
+	clones := req.clone(int32(len(os)))
 	for i, o := range os {
 		o.Put(clones[i])
 	}

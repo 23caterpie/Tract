@@ -88,18 +88,18 @@ func TestOpencensusErrorTract(t *testing.T) {
 
 	// worker1 metrics
 	assert.Equal(t, int64(1), getPoint(metrics, testWorkerInputLatencyView.Name, worker1Tags))
-	assert.Equal(t, nil, getPoint(metrics, testWorkerWaitLatencyView.Name, worker1Tags)) // no wait metrics for the first worker since there is no previous output to start the wait.
-	assert.Equal(t, nil, getPoint(metrics, testWorkerWorkLatencyView.Name, worker1Tags)) // early out request did contribute to this
+	assert.Equal(t, nil, getPoint(metrics, testWorkerWaitLatencyView.Name, worker1Tags))   // no wait metrics for the first worker since there is no previous output to start the wait.
+	assert.Equal(t, nil, getPoint(metrics, testWorkerWorkLatencyView.Name, worker1Tags))   // early out request did contribute to this
 	assert.Equal(t, nil, getPoint(metrics, testWorkerOutputLatencyView.Name, worker1Tags)) // early out request did not contribute to this
 	// worker2 metrics
-	assert.Equal(t, nil, getPoint(metrics, testWorkerInputLatencyView.Name, worker2Tags)) // early out request never made it to worker2
-	assert.Equal(t, nil, getPoint(metrics, testWorkerWaitLatencyView.Name, worker2Tags)) // early out request never made it to worker2
-	assert.Equal(t, nil, getPoint(metrics, testWorkerWorkLatencyView.Name, worker2Tags)) // early out request never made it to worker2
+	assert.Equal(t, nil, getPoint(metrics, testWorkerInputLatencyView.Name, worker2Tags))  // early out request never made it to worker2
+	assert.Equal(t, nil, getPoint(metrics, testWorkerWaitLatencyView.Name, worker2Tags))   // early out request never made it to worker2
+	assert.Equal(t, nil, getPoint(metrics, testWorkerWorkLatencyView.Name, worker2Tags))   // early out request never made it to worker2
 	assert.Equal(t, nil, getPoint(metrics, testWorkerOutputLatencyView.Name, worker2Tags)) // early out request never made it to worker2
 	// serialGroup1 metrics
 	assert.Equal(t, int64(1), getPoint(metrics, testGroupInputLatencyView.Name, serialGroup1Tags))
-	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, serialGroup1Tags)) // no wait metrics for the outer group since there is no previous output to start the wait.
-	assert.Equal(t, nil, getPoint(metrics, testGroupWorkLatencyView.Name, serialGroup1Tags)) // early out request did contribute to this
+	assert.Equal(t, nil, getPoint(metrics, testGroupWaitLatencyView.Name, serialGroup1Tags))   // no wait metrics for the outer group since there is no previous output to start the wait.
+	assert.Equal(t, nil, getPoint(metrics, testGroupWorkLatencyView.Name, serialGroup1Tags))   // early out request did contribute to this
 	assert.Equal(t, nil, getPoint(metrics, testGroupOutputLatencyView.Name, serialGroup1Tags)) // early out request did contribute to this
 	// base metrics
 	assert.Equal(t, nil, getPoint(metrics, testGroupInputLatencyView.Name, baseGroupTags)) // no input metrics for base group.

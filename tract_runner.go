@@ -1,6 +1,6 @@
 package tract
 
-// NewTractRunner provides a simplified interface for runner a tract with a given input and output.
+// NewTractRunner provides a simplified interface for running a tract with a given input and output.
 func NewTractRunner[InputType, OutputType Request](
 	input Input[InputType],
 	tract Tract[InputType, OutputType],

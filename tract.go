@@ -28,23 +28,24 @@ var (
 //
 // Usage:
 //  myTract := tract.NewXYZTract(...)
-//  myInput := tract.Channel(nil)
-//  tractStarter, err := myTract.Init(myInput, nil)
+//  myInput := tract.Channel(...)
+//  tractStarter, err := tract.Init(myInput, myTract, nil)
 //  if err != nil {
 //      // Handle error
 //      return
 //  }
 //  tractWaiter := tractStarter.Start()
+//  ...
+//  close(myInput)
 //  tractWaiter.Wait()
 //
 //  // Let's start again!
 //  err = myTract.Init(...)
 //  ...
 type Tract[InputType, OutputType Request] interface {
-	// Name of the Tract: used for logging and instrementation.
+	// Name of the Tract: used for logging and instrumentation.
 	Name() string
-	// Init initializes the Tract. Must be called before calling Start().
-	// Once Start has been called, Init should not be called.
+	// Init initializes the Tract.
 	Init(
 		Input[RequestWrapper[InputType]],
 		Output[RequestWrapper[OutputType]],
@@ -52,8 +53,8 @@ type Tract[InputType, OutputType Request] interface {
 }
 
 type TractStarter interface {
-	// Start starts the Tract. Returns a TractWaiter that waits for the Tract to finish processing.
-	// TractWaiter must be called to close resources and close output.
+	// Start starts the Tract.
+	// The returned TractWaiter must be called to close resources and close output.
 	Start() TractWaiter
 }
 
@@ -62,6 +63,7 @@ type TractWaiter interface {
 	Wait()
 }
 
+// Init iniliazes a tract using basic input and output.
 func Init[InputType, OutputType Request](
 	input Input[InputType],
 	t Tract[InputType, OutputType],

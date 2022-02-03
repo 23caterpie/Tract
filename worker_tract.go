@@ -59,6 +59,7 @@ func (p *workerTract[InputType, OutputType]) Init(
 	)
 }
 
+// TractStarter for a workerTract
 func newInitializedWorkerTract[InputType, OutputType Request](
 	size int,
 	factory WorkerFactory[InputType, OutputType, Worker[InputType, OutputType]],

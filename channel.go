@@ -1,5 +1,6 @@
 package tract
 
+// NewChannel make a new Channel of requests.
 func NewChannel[T Request](c chan T) Channel[T] {
 	return Channel[T](c)
 }

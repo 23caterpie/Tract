@@ -7,7 +7,7 @@ type WorkerFactory[InputType, OutputType Request, WorkerType Worker[InputType, O
 	// MakeWorker makes a worker expected to run in a tract.
 	// This Worker contructor will be called once per worker needed for a Worker Tract.
 	// If a single worker needs its own resources that are contructed here and need closed when done,
-	// the worker should implement a Close() method which the tract will call when it shuts down.
+	// the worker should implement Closer. the tract will call Close() when it shuts down.
 	// Any resources the Workers will share should be instaniated and closed in a higher scope.
 	MakeWorker() (WorkerType, error)
 }
@@ -15,12 +15,12 @@ type WorkerFactory[InputType, OutputType Request, WorkerType Worker[InputType, O
 // Worker is an object that performs work potentially using it own resources and/or factory resources.
 type Worker[InputType, OutputType Request] interface {
 	// Work takes an input, performs an operation, and returns an output and potentially an error.
-	// If the returned error is not nil, that specifies that the returned request should be discarded.
+	// If the returned error is not nil, that specifies that the returned request will be discarded.
 	Work(context.Context, InputType) (OutputType, error)
 }
 
 // Closer is something that closes its own locally scoped resources.
-// Worker objects should implement this if their factory's makes resources for them on construction.
+// Worker objects should implement this if their factory makes resources for them on construction.
 type Closer interface {
 	// Close closes resources
 	Close()

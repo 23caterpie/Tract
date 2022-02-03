@@ -3,8 +3,7 @@ package tract
 import "fmt"
 
 // NewSerialGroupTract makes a new tract that consists muliple other tracts.
-// This accomplishes the same thing as chaining other tracts together manually,
-// but has the benefit of being able to treat that chain of tracts as a single tract.
+// This has the benefit of being able to treat many tracts as a single tract.
 //     ----------------------------------------------
 //  -> | ( Tract0 ) -> ( Tract1 ) -> ( Tract2 ) ... | ->
 //     ----------------------------------------------
@@ -55,6 +54,29 @@ func (p *SerialGroupTract[InputType, InnerType, OutputType]) Init(
 	}), nil
 }
 
+// NewNamedLinker is a facilitator for SerialGroupTract.
+// This allows you to link many tracts together in a semi-non-nested way despite generic methods not being allowed.
+// usage:
+// 		myTract := tract.NewNamedLinker[T, T, T](
+// 			"myGroup",
+// 			tract.NewWorkerTract("myWorker1", 1, myWorker1),
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorker2", 1, myWorker2),
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorker3", 1, myWorker3),
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorker4", 1, myWorker4),
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorker5", 1, myWorker5),
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorker6", 1, myWorker6),
+// 		...
+// 		).Link(tract.NewLinker[T, T, T](
+// 			tract.NewWorkerTract("myWorkerN-1", 1, myWorkerN_1),
+// 		).Link(
+// 			tract.NewWorkerTract("myWorkerN", 1, myWorkerN),
+// 		)))))))
+// 		...
 func NewNamedLinker[InputType, InnerType, OutputType Request](
 	name string,
 	tract Tract[InputType, InnerType],
@@ -65,6 +87,9 @@ func NewNamedLinker[InputType, InnerType, OutputType Request](
 	}
 }
 
+// NewLinker is the same as NewNamedLinker without a name.
+// Particularly useful if this is defining a part of a named parent tract.
+// Non named tracts do not make metrics/traces.
 func NewLinker[InputType, InnerType, OutputType Request](
 	tract Tract[InputType, InnerType],
 ) Linker[InputType, InnerType, OutputType] {

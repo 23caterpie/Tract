@@ -11,9 +11,11 @@ import (
 	"go.opencensus.io/trace"
 )
 
+const baseSpanName = `octract/base`
+
 func newOpencensusData(ctx context.Context) opencensusData {
 	return opencensusData{
-		baseData: newOpencensusUnitData(ctx, `octract/base`, now()),
+		baseData: newOpencensusUnitData(ctx, baseSpanName, now()),
 	}
 }
 
@@ -309,7 +311,7 @@ type opencensusOutput[T Request] struct {
 	spanName      string
 }
 
-func (i opencensusOutput[T]) Put(req RequestWrapper[T]) {
+func (o opencensusOutput[T]) Put(req RequestWrapper[T]) {
 	var (
 		// Input data must be popped strictly before we get the context, since that will change the context we use.
 		inputTime = req.meta.opencensusData.popInputData()
@@ -317,8 +319,10 @@ func (i opencensusOutput[T]) Put(req RequestWrapper[T]) {
 		ctx = req.meta.opencensusData.context()
 	)
 	start := now()
-	req.meta.opencensusData.pushOutputData(ctx, i.spanName, start)
-	i.base.Put(req)
+	req.meta.opencensusData.pushOutputData(ctx, o.spanName, start)
+	if o.base != nil {
+		o.base.Put(req)
+	}
 	end := now()
 	// Once request has been pushed, it must not be modified since another go routine may be using it.
 
@@ -326,18 +330,20 @@ func (i opencensusOutput[T]) Put(req RequestWrapper[T]) {
 	// Do it down here so we can get the Put() call through as early as possible.
 	measurements := []stats.Measurement{
 		// Populate output latency.
-		i.outputLatency.M(float64(end.Sub(start)) / float64(time.Millisecond)),
+		o.outputLatency.M(float64(end.Sub(start)) / float64(time.Millisecond)),
 	}
 	// Populate work latency using last input time.
 	// "work" is time spent calling Work() in a worker tract or the cumulative time spent in a group tract.
 	if !inputTime.IsZero() {
 		measurements = append(measurements,
-			i.workLatency.M(float64(start.Sub(inputTime))/float64(time.Millisecond)),
+			o.workLatency.M(float64(start.Sub(inputTime))/float64(time.Millisecond)),
 		)
 	}
-	stats.RecordWithTags(ctx, i.tags, measurements...)
+	stats.RecordWithTags(ctx, o.tags, measurements...)
 }
 
-func (i opencensusOutput[T]) Close() {
-	i.base.Close()
+func (o opencensusOutput[T]) Close() {
+	if o.base != nil {
+		o.base.Close()
+	}
 }
