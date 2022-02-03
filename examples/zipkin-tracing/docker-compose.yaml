@@ -1,0 +1,75 @@
+version: "2.1"
+
+services:
+  zipkin-tracing-example:
+    build:
+      context: ../..
+      dockerfile: ./examples/zipkin-tracing/Dockerfile
+    ports:
+      - "8081:8081" # service (healthcheck, metrics, pprof)
+    environment:
+      KAFKA_BROKERS: "kafka-local:9092"
+      KAFKA_CONSUMER_GROUP_NAME: "zipkin-tracing-example"
+      KAFKA_TOPICS: "requests"
+      TRACT_PARSE_SIZE: "1"
+      TRACT_SQRT_SIZE: "2"
+      TRACT_WRITE_SIZE: "1"
+      # HTTP Server
+      SERVICE_SERVER_ADDR: ":8081"
+      # Metrics
+      PROMETHEUS_SERVICE_NAME: "zipkin_tracing_example"
+      # Tracing
+      ZIPKIN_SERVICE_NAME: "zipkin-tracing-example"
+      ZIPKIN_SERVER_ADDR: "http://zipkin:9411/api/v2/spans"
+      TRACING_SAMPLE_RATE: "1.0"
+    depends_on:
+      kafka-local:
+        condition: service_healthy
+      zipkin:
+        condition: service_started
+      prom:
+        condition: service_started
+    healthcheck:
+      test: "curl --fail localhost:8081/healthcheck"
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  kafka-local:
+    image: wurstmeister/kafka:2.12-2.2.2
+    environment:
+      KAFKA_CREATE_TOPICS: requests:1:1
+      KAFKA_ADVERTISED_HOST_NAME: kafka-local
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-local:2181
+    ports:
+      - "9092:9092"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      zookeeper-local:
+        condition: service_started
+    restart: always
+    healthcheck:
+      test: "kafka-topics.sh --zookeeper zookeeper-local:2181 --list 2>&1 | grep \"requests\""
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  zookeeper-local:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+
+  # To view traces:
+  # http://localhost:9411/
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+
+  prom:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prom/prometheus.yml:/etc/prometheus/prometheus.yml

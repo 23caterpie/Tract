@@ -50,3 +50,9 @@ passed along to the paralell tract's output.
 A fanout tract has multiple independent tracts. When this tract receives a request on
 its input, it is multiplied and passed to every inner tract. Each of these requests
 processes through its tract, and passed along to the fanout tract's output.
+
+TODO:
+* Focus on ease of use.
+  - look into simplifying the external api.
+  - consider an input factory interface that can be fulfilled and provided to a tract runner.
+    * This can be used to construct the input when the tract is actually initiallized. Potenitally useful for only starting to read from an input queue during the tract's initilization step.

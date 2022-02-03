@@ -2,116 +2,187 @@ package tract_test
 
 import (
 	"context"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 
-	"git.dev.kochava.com/ccurrin/tract"
+	tract "github.com/23caterpie/Tract"
 )
 
-var _ tract.WorkerFactory = testWorkerFactory{}
+var _ tract.WorkerFactory[int64, string, testWorker[int64, string]] = testWorkerFactory[int64, string]{}
 
-type testWorkerFactory struct {
+type testWorkerFactory[InputType, OutputType tract.Request] struct {
 	flagMakeWorker func()
-	flagClose      func()
-	tract.Worker
+	testWorker[InputType, OutputType]
 }
 
-func (f testWorkerFactory) MakeWorker() (tract.Worker, error) {
+func (f testWorkerFactory[InputType, OutputType]) MakeWorker() (testWorker[InputType, OutputType], error) {
 	f.flagMakeWorker()
-	return f.Worker, nil
+	return f.testWorker, nil
 }
 
-func (f testWorkerFactory) Close() { f.flagClose() }
+var _ tract.Worker[int64, string] = testWorker[int64, string]{}
 
-var _ tract.Worker = testWorker{}
-
-type testWorker struct {
+type testWorker[InputType, OutputType tract.Request] struct {
 	flagClose func()
-	work      func(r tract.Request) (tract.Request, bool)
+	work      func(context.Context, InputType) (OutputType, error)
 }
 
-func (w testWorker) Work(r tract.Request) (tract.Request, bool) {
-	return w.work(r)
+func (w testWorker[InputType, OutputType]) Work(ctx context.Context, i InputType) (OutputType, error) {
+	return w.work(ctx, i)
 }
 
-func (w testWorker) Close() { w.flagClose() }
+func (w testWorker[InputType, OutputType]) Close() { w.flagClose() }
+
+var _ tract.Input[int64] = testInput[int64]{}
+
+type testInput[T tract.Request] struct {
+	flagGet func()
+	get     func() (T, bool)
+}
+
+func (i testInput[T]) Get() (T, bool) {
+	i.flagGet()
+	return i.get()
+}
+
+func newSourceTestInput[T tract.Request](getCount *int64, source []T) testInput[T] {
+	mutex := new(sync.Mutex)
+	return testInput[T]{
+		flagGet: func() {
+			atomic.AddInt64(getCount, 1)
+		},
+		get: func() (T, bool) {
+			mutex.Lock()
+			defer mutex.Unlock()
+			if len(source) == 0 {
+				var t T
+				return t, false
+			}
+			item := source[0]
+			source = source[1:]
+			return item, true
+		},
+	}
+}
+
+var _ tract.Output[int64] = testOutput[int64]{}
+
+type testOutput[T tract.Request] struct {
+	flagPut   func()
+	put       func(T)
+	flagClose func()
+	close     func()
+}
+
+func (o testOutput[T]) Put(t T) {
+	o.flagPut()
+	o.put(t)
+}
+
+func (o testOutput[T]) Close() {
+	o.flagClose()
+	o.close()
+}
+
+func newTestOutput[T tract.Request](putCount, closeCount *int64) testOutput[T] {
+	return testOutput[T]{
+		flagPut: func() {
+			atomic.AddInt64(putCount, 1)
+		},
+		put: func(T) {},
+		flagClose: func() {
+			atomic.AddInt64(closeCount, 1)
+		},
+		close: func() {},
+	}
+}
 
 func TestWorkerTract(t *testing.T) {
+	type (
+		myInputType  struct{}
+		myOutputType struct{}
+	)
+
+	var (
+		numberOfInputGets         int64
+		numberOfRequestsProcessed int64
+		numberOfMadeWorkers       int64
+		numberOfWorkersClosed     int64
+		numberOfOutputPuts        int64
+		numberOfOutputCloses      int64
+	)
 	// 10 requests
-	workSource := []struct{}{9: {}}
-	numberOfRequestsProcessed := 0
-	numberOfMadeWorkers := 0
-	numberOfFactoriesClosed := 0
-	numberOfWorkersClosed := 0
-	numberOfCleanups := 0
-	workerTract := tract.NewWorkerTract("myWorkerTract", 1, testWorkerFactory{
+	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
+	workerTract := tract.NewWorkerFactoryTract[myInputType, myOutputType, testWorker[myInputType, myOutputType]]("myWorkerTract", 1, testWorkerFactory[myInputType, myOutputType]{
 		flagMakeWorker: func() { numberOfMadeWorkers++ },
-		flagClose:      func() { numberOfFactoriesClosed++ },
-		Worker: testWorker{
+		testWorker: testWorker[myInputType, myOutputType]{
 			flagClose: func() { numberOfWorkersClosed++ },
-			work: func(r tract.Request) (tract.Request, bool) {
-				if len(workSource) == 0 {
-					return r, false
-				}
-				workSource = workSource[1:]
+			work: func(_ context.Context, _ myInputType) (myOutputType, error) {
 				numberOfRequestsProcessed++
-				r = tract.AddRequestCleanup(r, func(tract.Request, bool) { numberOfCleanups++ })
-				return r, true
+				return myOutputType{}, nil
 			},
 		},
-	}, tract.WithFactoryClosure(true))
+	})
+	output := newTestOutput[myOutputType](&numberOfOutputPuts, &numberOfOutputCloses)
 
 	// Pre-Init Checks
 	var (
-		expectedNumberOfRequestsProcessed = 0
-		expectedNumberOfMadeWorkers       = 0
-		expectedNumberOfFactoriesClosed   = 0
-		expectedNumberOfWorkersClosed     = 0
-		expectedNumberOfCleanups          = 0
+		expectedNumberOfInputGets         int64
+		expectedNumberOfRequestsProcessed int64
+		expectedNumberOfMadeWorkers       int64
+		expectedNumberOfWorkersClosed     int64
+		expectedNumberOfOutputPuts        int64
+		expectedNumberOfOutputCloses      int64
 	)
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
-	if numberOfCleanups != expectedNumberOfCleanups {
-		t.Errorf(`number of request cleanups: expected %d, received %d`, expectedNumberOfCleanups, numberOfCleanups)
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
-	err := workerTract.Init()
+	workerTractStarter, err := tract.Init[myInputType, myOutputType](input, workerTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
 
 	// Pre-Start Checks
+	expectedNumberOfInputGets = 0
 	expectedNumberOfRequestsProcessed = 0
 	expectedNumberOfMadeWorkers = 1
-	expectedNumberOfFactoriesClosed = 0
 	expectedNumberOfWorkersClosed = 0
-	expectedNumberOfCleanups = 0
+	expectedNumberOfOutputPuts = 0
+	expectedNumberOfOutputCloses = 0
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
-	if numberOfCleanups != expectedNumberOfCleanups {
-		t.Errorf(`number of request cleanups: expected %d, received %d`, expectedNumberOfCleanups, numberOfCleanups)
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
 	expectedName := "myWorkerTract"
@@ -120,110 +191,134 @@ func TestWorkerTract(t *testing.T) {
 		t.Errorf("name: expected %q, received %q", expectedName, actualName)
 	}
 
-	wait := workerTract.Start()
-	wait()
+	workerTractWaiter := workerTractStarter.Start()
+	workerTractWaiter.Wait()
 
 	// Finished Checks
+	expectedNumberOfInputGets = 11
 	expectedNumberOfRequestsProcessed = 10
 	expectedNumberOfMadeWorkers = 1
-	expectedNumberOfFactoriesClosed = 1
 	expectedNumberOfWorkersClosed = 1
-	expectedNumberOfCleanups = 10
+	expectedNumberOfOutputPuts = 10
+	expectedNumberOfOutputCloses = 1
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
-	if numberOfCleanups != expectedNumberOfCleanups {
-		t.Errorf(`number of request cleanups: expected %d, received %d`, expectedNumberOfCleanups, numberOfCleanups)
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 }
 
 func TestSerialGroupTract(t *testing.T) {
-	// 10 requests
-	workSource := []struct{}{9: {}}
+	type (
+		myInputType  struct{}
+		myInnerType  struct{}
+		myOutputType struct{}
+	)
+
 	var (
-		numberOfRequestsProcessed int64
+		numberOfInputGets         int64
+		numberOfRequestsProcessed = [2]int64{}
 		numberOfMadeWorkers       int64
-		numberOfFactoriesClosed   int64
 		numberOfWorkersClosed     int64
+		numberOfOutputPuts        int64
+		numberOfOutputCloses      int64
 	)
+	// 10 requests
+	input := newSourceTestInput(&numberOfInputGets, []myInputType{9: {}})
 	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
-		tract.NewWorkerTract("head", 1, testWorkerFactory{
+		tract.NewWorkerFactoryTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					if len(workSource) == 0 {
-						return r, false
-					}
-					workSource = workSource[1:]
-					return r, true
+				work: func(_ context.Context, _ myInputType) (myInnerType, error) {
+					atomic.AddInt64(&numberOfRequestsProcessed[0], 1)
+					return myInnerType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
-		tract.NewWorkerTract("tail", 2, testWorkerFactory{
+		}),
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("tail", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					atomic.AddInt64(&numberOfRequestsProcessed, 1)
-					return r, true
+				work: func(_ context.Context, _ myInnerType) (myOutputType, error) {
+					atomic.AddInt64(&numberOfRequestsProcessed[1], 1)
+					return myOutputType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
+		}),
 	)
+	output := newTestOutput[myOutputType](&numberOfOutputPuts, &numberOfOutputCloses)
 
 	// Pre-Init Checks
 	var (
-		expectedNumberOfRequestsProcessed int64 = 0
+		expectedNumberOfInputGets         int64 = 0
+		expectedNumberOfRequestsProcessed       = [2]int64{0, 0}
 		expectedNumberOfMadeWorkers       int64 = 0
-		expectedNumberOfFactoriesClosed   int64 = 0
 		expectedNumberOfWorkersClosed     int64 = 0
+		expectedNumberOfOutputPuts        int64 = 0
+		expectedNumberOfOutputCloses      int64 = 0
 	)
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
+	}
 
-	err := myTract.Init()
+	myTractStarter, err := tract.Init[myInputType, myOutputType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
 
 	// Pre-Start Checks
-	expectedNumberOfRequestsProcessed = 0
+	expectedNumberOfInputGets = 0
+	expectedNumberOfRequestsProcessed = [2]int64{0, 0}
 	expectedNumberOfMadeWorkers = 3
-	expectedNumberOfFactoriesClosed = 0
 	expectedNumberOfWorkersClosed = 0
+	expectedNumberOfOutputPuts = 0
+	expectedNumberOfOutputCloses = 0
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
+	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 
 	expectedName := "mySerialGroupTract"
@@ -232,108 +327,96 @@ func TestSerialGroupTract(t *testing.T) {
 		t.Errorf("name: expected %q, received %q", expectedName, actualName)
 	}
 
-	myTract.Start()()
+	myTractStarter.Start().Wait()
 
 	// Finished Checks
-	expectedNumberOfRequestsProcessed = 10
+	expectedNumberOfInputGets = 11
+	expectedNumberOfRequestsProcessed = [2]int64{10, 10}
 	expectedNumberOfMadeWorkers = 3
-	expectedNumberOfFactoriesClosed = 2
 	expectedNumberOfWorkersClosed = 3
+	expectedNumberOfOutputPuts = 10
+	expectedNumberOfOutputCloses = 1
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	if numberOfRequestsProcessed != expectedNumberOfRequestsProcessed {
 		t.Errorf(`number of requests processed: expected %d, received %d`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
+	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 }
 
 func TestParalellGroupTract(t *testing.T) {
-	// 100 requests
-	workSource := []struct{}{99: {}}
+	type (
+		myRequestType struct{}
+	)
+
 	var (
+		numberOfInputGets                 int64
 		numberOfParalellRequestsProcessed = [3]int64{}
-		numberOfTailRequestsProcessed     int64
 		numberOfMadeWorkers               int64
-		numberOfFactoriesClosed           int64
 		numberOfWorkersClosed             int64
+		numberOfOutputPuts                int64
+		numberOfOutputCloses              int64
 	)
-	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
-		tract.NewWorkerTract("head", 1, testWorkerFactory{
+	// 100 requests
+	input := newSourceTestInput(&numberOfInputGets, []myRequestType{99: {}})
+	myTract := tract.NewParalellGroupTract[myRequestType, myRequestType]("myParalellGroupTract",
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle1", 1, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					if len(workSource) == 0 {
-						return r, false
-					}
-					workSource = workSource[1:]
-					return r, true
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
+					atomic.AddInt64(&numberOfParalellRequestsProcessed[0], 1)
+					return myRequestType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
-		tract.NewParalellGroupTract("myParalellGroupTract",
-			tract.NewWorkerTract("middle1", 1, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfParalellRequestsProcessed[0], 1)
-						return r, true
-					},
-				},
-			}, tract.WithFactoryClosure(true)),
-			tract.NewWorkerTract("middle2", 2, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfParalellRequestsProcessed[1], 1)
-						return r, true
-					},
-				},
-			}),
-			tract.NewWorkerTract("middle3", 4, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfParalellRequestsProcessed[2], 1)
-						return r, true
-					},
-				},
-			}, tract.WithFactoryClosure(true)),
-		),
-		tract.NewWorkerTract("tail", 8, testWorkerFactory{
+		}),
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle2", 2, testWorkerFactory[myRequestType, myRequestType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myRequestType, myRequestType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					atomic.AddInt64(&numberOfTailRequestsProcessed, 1)
-					return r, true
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
+					atomic.AddInt64(&numberOfParalellRequestsProcessed[1], 1)
+					return myRequestType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
+		}),
+		tract.NewWorkerFactoryTract[myRequestType, myRequestType, testWorker[myRequestType, myRequestType]]("middle3", 4, testWorkerFactory[myRequestType, myRequestType]{
+			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+			testWorker: testWorker[myRequestType, myRequestType]{
+				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
+				work: func(_ context.Context, _ myRequestType) (myRequestType, error) {
+					atomic.AddInt64(&numberOfParalellRequestsProcessed[2], 1)
+					return myRequestType{}, nil
+				},
+			},
+		}),
 	)
+	output := newTestOutput[myRequestType](&numberOfOutputPuts, &numberOfOutputCloses)
 
 	// Pre-Init Checks
 	var (
+		expectedNumberOfInputGets                 int64 = 0
 		expectedNumberOfParalellRequestsProcessed int64 = 0
-		expectedNumberOfTailRequestsProcessed     int64 = 0
 		expectedNumberOfMadeWorkers               int64 = 0
-		expectedNumberOfFactoriesClosed           int64 = 0
 		expectedNumberOfWorkersClosed             int64 = 0
+		expectedNumberOfOutputPuts                int64 = 0
+		expectedNumberOfOutputCloses              int64 = 0
 	)
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	var totalNumberOfParalellRequestsProcessed int64
 	for _, n := range numberOfParalellRequestsProcessed {
 		totalNumberOfParalellRequestsProcessed += n
@@ -341,31 +424,35 @@ func TestParalellGroupTract(t *testing.T) {
 	if totalNumberOfParalellRequestsProcessed != expectedNumberOfParalellRequestsProcessed {
 		t.Errorf(`number of paralell requests processed: expected %d, received %d`, expectedNumberOfParalellRequestsProcessed, totalNumberOfParalellRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
-	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
 	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
+	}
 
-	err := myTract.Init()
+	myTractStarter, err := tract.Init[myRequestType, myRequestType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
 
 	// Pre-Start Checks
+	expectedNumberOfInputGets = 0
 	expectedNumberOfParalellRequestsProcessed = 0
-	expectedNumberOfTailRequestsProcessed = 0
-	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 0
+	expectedNumberOfMadeWorkers = 7
 	expectedNumberOfWorkersClosed = 0
+	expectedNumberOfOutputPuts = 0
+	expectedNumberOfOutputCloses = 0
 
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	totalNumberOfParalellRequestsProcessed = 0
 	for _, n := range numberOfParalellRequestsProcessed {
 		totalNumberOfParalellRequestsProcessed += n
@@ -373,34 +460,38 @@ func TestParalellGroupTract(t *testing.T) {
 	if totalNumberOfParalellRequestsProcessed != expectedNumberOfParalellRequestsProcessed {
 		t.Errorf(`number of paralell requests processed: expected %d, received %d`, expectedNumberOfParalellRequestsProcessed, totalNumberOfParalellRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
-	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
 	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
+	}
 
-	expectedName := "mySerialGroupTract"
+	expectedName := "myParalellGroupTract"
 	actualName := myTract.Name()
 	if actualName != expectedName {
 		t.Errorf("name: expected %q, received %q", expectedName, actualName)
 	}
 
-	myTract.Start()()
+	myTractStarter.Start().Wait()
 
 	// Finished Checks
+	expectedNumberOfInputGets = 107 // 100 requests + 7 total worker in the paralell group
 	expectedNumberOfParalellRequestsProcessed = 100
-	expectedNumberOfTailRequestsProcessed = 100
-	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 4
-	expectedNumberOfWorkersClosed = 16
+	expectedNumberOfMadeWorkers = 7
+	expectedNumberOfWorkersClosed = 7
+	expectedNumberOfOutputPuts = 100
+	expectedNumberOfOutputCloses = 1
 
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
+	}
 	totalNumberOfParalellRequestsProcessed = 0
 	for _, n := range numberOfParalellRequestsProcessed {
 		totalNumberOfParalellRequestsProcessed += n
@@ -408,510 +499,186 @@ func TestParalellGroupTract(t *testing.T) {
 	if totalNumberOfParalellRequestsProcessed != expectedNumberOfParalellRequestsProcessed {
 		t.Errorf(`number of paralell requests processed: expected %d, received %d`, expectedNumberOfParalellRequestsProcessed, totalNumberOfParalellRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
-	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
+	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
 }
 
 func TestFanOutGroupTract(t *testing.T) {
-	// 100 requests
-	workSource := []struct{}{99: {}}
+	type (
+		myInputType  struct{}
+		myInnerType  struct{}
+		myOutputType struct{}
+	)
+
 	var (
+		numberOfInputGets               int64
+		numberOfHeadRequestsProcessed   int64
 		numberOfFanOutRequestsProcessed = [3]int64{}
-		numberOfTailRequestsProcessed   int64
 		numberOfMadeWorkers             int64
-		numberOfFactoriesClosed         int64
 		numberOfWorkersClosed           int64
+		numberOfOutputPuts              int64
+		numberOfOutputCloses            int64
 	)
-	myTract := tract.NewSerialGroupTract("mySerialGroupTract",
-		tract.NewWorkerTract("head", 1, testWorkerFactory{
+	// 100 requests
+	input := newSourceTestInput(&numberOfInputGets, []myInputType{99: {}})
+	myTract := tract.NewFanOutGroupTract[myInputType, myInnerType, myOutputType]("myFanOutGroupTract",
+		tract.NewWorkerFactoryTract[myInputType, myInnerType, testWorker[myInputType, myInnerType]]("head", 1, testWorkerFactory[myInputType, myInnerType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myInputType, myInnerType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					if len(workSource) == 0 {
-						return r, false
-					}
-					workSource = workSource[1:]
-					return r, true
+				work: func(_ context.Context, r myInputType) (myInnerType, error) {
+					atomic.AddInt64(&numberOfHeadRequestsProcessed, 1)
+					return myInnerType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
-		tract.NewFanOutGroupTract("myFanOutGroupTract",
-			tract.NewWorkerTract("middle1", 1, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfFanOutRequestsProcessed[0], 1)
-						return r, true
-					},
-				},
-			}, tract.WithFactoryClosure(true)),
-			tract.NewWorkerTract("middle2", 2, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfFanOutRequestsProcessed[1], 1)
-						return r, true
-					},
-				},
-			}),
-			tract.NewWorkerTract("middle3", 4, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfFanOutRequestsProcessed[2], 1)
-						return r, true
-					},
-				},
-			}, tract.WithFactoryClosure(true)),
-		),
-		tract.NewWorkerTract("tail", 8, testWorkerFactory{
+		}),
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle1", 2, testWorkerFactory[myInnerType, myOutputType]{
 			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-			flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-			Worker: testWorker{
+			testWorker: testWorker[myInnerType, myOutputType]{
 				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-				work: func(r tract.Request) (tract.Request, bool) {
-					atomic.AddInt64(&numberOfTailRequestsProcessed, 1)
-					return r, true
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
+					atomic.AddInt64(&numberOfFanOutRequestsProcessed[0], 1)
+					return myOutputType{}, nil
 				},
 			},
-		}, tract.WithFactoryClosure(true)),
+		}),
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle2", 4, testWorkerFactory[myInnerType, myOutputType]{
+			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+			testWorker: testWorker[myInnerType, myOutputType]{
+				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
+					atomic.AddInt64(&numberOfFanOutRequestsProcessed[1], 1)
+					return myOutputType{}, nil
+				},
+			},
+		}),
+		tract.NewWorkerFactoryTract[myInnerType, myOutputType, testWorker[myInnerType, myOutputType]]("middle3", 8, testWorkerFactory[myInnerType, myOutputType]{
+			flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
+			testWorker: testWorker[myInnerType, myOutputType]{
+				flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
+				work: func(_ context.Context, r myInnerType) (myOutputType, error) {
+					atomic.AddInt64(&numberOfFanOutRequestsProcessed[2], 1)
+					return myOutputType{}, nil
+				},
+			},
+		}),
 	)
+	output := newTestOutput[myOutputType](&numberOfOutputPuts, &numberOfOutputCloses)
 
 	// Pre-Init Checks
 	var (
-		expectedNumberOfFanOutRequestsProcessed int64 = 0
-		expectedNumberOfTailRequestsProcessed   int64 = 0
+		expectedNumberOfInputGets               int64 = 0
+		expectedNumberOfHeadRequestsProcessed   int64 = 0
+		expectedNumberOfFanOutRequestsProcessed       = [3]int64{0, 0, 0}
 		expectedNumberOfMadeWorkers             int64 = 0
-		expectedNumberOfFactoriesClosed         int64 = 0
 		expectedNumberOfWorkersClosed           int64 = 0
+		expectedNumberOfOutputPuts              int64 = 0
+		expectedNumberOfOutputCloses            int64 = 0
 	)
-	var totalNumberOfRequestsProcessed int64
-	for _, n := range numberOfFanOutRequestsProcessed {
-		totalNumberOfRequestsProcessed += n
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
 	}
-	if totalNumberOfRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
-		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, totalNumberOfRequestsProcessed)
+	if numberOfHeadRequestsProcessed != expectedNumberOfHeadRequestsProcessed {
+		t.Errorf(`number of head requests processed: expected %d, received %d`, expectedNumberOfHeadRequestsProcessed, numberOfHeadRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
+	if numberOfFanOutRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
+		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, numberOfFanOutRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
+	}
 
-	err := myTract.Init()
+	myTractStarter, err := tract.Init[myInputType, myOutputType](input, myTract, output)
 	if err != nil {
 		t.Errorf("unexpected error during tract initialization %v", err)
 	}
 
 	// Pre-Start Checks
-	expectedNumberOfFanOutRequestsProcessed = 0
-	expectedNumberOfTailRequestsProcessed = 0
-	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 0
+	expectedNumberOfInputGets = 0
+	expectedNumberOfHeadRequestsProcessed = 0
+	expectedNumberOfFanOutRequestsProcessed = [3]int64{0, 0, 0}
+	expectedNumberOfMadeWorkers = 15
 	expectedNumberOfWorkersClosed = 0
+	expectedNumberOfOutputPuts = 0
+	expectedNumberOfOutputCloses = 0
 
-	totalNumberOfRequestsProcessed = 0
-	for _, n := range numberOfFanOutRequestsProcessed {
-		totalNumberOfRequestsProcessed += n
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
 	}
-	if totalNumberOfRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
-		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, totalNumberOfRequestsProcessed)
+	if numberOfHeadRequestsProcessed != expectedNumberOfHeadRequestsProcessed {
+		t.Errorf(`number of head requests processed: expected %d, received %d`, expectedNumberOfHeadRequestsProcessed, numberOfHeadRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
+	if numberOfFanOutRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
+		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, numberOfFanOutRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
+	}
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
+	}
 
-	expectedName := "mySerialGroupTract"
+	expectedName := "myFanOutGroupTract"
 	actualName := myTract.Name()
 	if actualName != expectedName {
 		t.Errorf("name: expected %q, received %q", expectedName, actualName)
 	}
 
-	myTract.Start()()
+	myTractStarter.Start().Wait()
 
 	// Finished Checks
-	expectedNumberOfFanOutRequestsProcessed = 300
-	expectedNumberOfTailRequestsProcessed = 300
-	expectedNumberOfMadeWorkers = 16
-	expectedNumberOfFactoriesClosed = 4
-	expectedNumberOfWorkersClosed = 16
+	expectedNumberOfInputGets = 101
+	expectedNumberOfHeadRequestsProcessed = 100
+	expectedNumberOfFanOutRequestsProcessed = [3]int64{100, 100, 100}
+	expectedNumberOfMadeWorkers = 15
+	expectedNumberOfWorkersClosed = 15
+	expectedNumberOfOutputPuts = 300
+	expectedNumberOfOutputCloses = 1
 
-	totalNumberOfRequestsProcessed = 0
-	for _, n := range numberOfFanOutRequestsProcessed {
-		totalNumberOfRequestsProcessed += n
+	if numberOfInputGets != expectedNumberOfInputGets {
+		t.Errorf(`number of input requests gotten: expected %d, received %d`, expectedNumberOfInputGets, numberOfInputGets)
 	}
-	if totalNumberOfRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
-		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, totalNumberOfRequestsProcessed)
+	if numberOfHeadRequestsProcessed != expectedNumberOfHeadRequestsProcessed {
+		t.Errorf(`number of head requests processed: expected %d, received %d`, expectedNumberOfHeadRequestsProcessed, numberOfHeadRequestsProcessed)
 	}
-	if numberOfTailRequestsProcessed != expectedNumberOfTailRequestsProcessed {
-		t.Errorf(`number of tail requests processed: expected %d, received %d`, expectedNumberOfTailRequestsProcessed, numberOfTailRequestsProcessed)
+	if numberOfFanOutRequestsProcessed != expectedNumberOfFanOutRequestsProcessed {
+		t.Errorf(`number of fan out requests processed: expected %d, received %d`, expectedNumberOfFanOutRequestsProcessed, numberOfFanOutRequestsProcessed)
 	}
 	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
 		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
 	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
 		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
 	}
-}
-
-func TestTractWorker(t *testing.T) {
-	type testLabel struct{}
-	var (
-		numberOfRequestsProcessed    = [2]int64{}
-		numberOfMadeWorkers          int64
-		numberOfFactoriesClosed      int64
-		numberOfWorkersClosed        int64
-		numberOfRequestCleanups      = [3]map[int]struct{}{{}, {}, {}}
-		numberOfRequestCleanupsMutex = &sync.Mutex{}
-	)
-	myWorkerFactory := tract.NewTractWorkerFactory(
-		tract.NewSerialGroupTract("tractWorkerGroup",
-			tract.NewWorkerTract("tractWorker1", 4, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfRequestsProcessed[0], 1)
-						r = tract.AddRequestCleanup(r, func(req tract.Request, success bool) {
-							if success {
-								tractKey := 0
-								key, _ := req.Value(testLabel{}).(int)
-								numberOfRequestCleanupsMutex.Lock()
-								if _, found := numberOfRequestCleanups[tractKey][key]; found {
-									t.Errorf("request %d has already been cleaned up for tract %d", key, tractKey)
-								}
-								numberOfRequestCleanups[tractKey][key] = struct{}{}
-								numberOfRequestCleanupsMutex.Unlock()
-							}
-						})
-						return r, true
-					},
-				},
-			}, tract.WithFactoryClosure(true)),
-			tract.NewWorkerTract("tractWorker2", 1, testWorkerFactory{
-				flagMakeWorker: func() { atomic.AddInt64(&numberOfMadeWorkers, 1) },
-				flagClose:      func() { atomic.AddInt64(&numberOfFactoriesClosed, 1) },
-				Worker: testWorker{
-					flagClose: func() { atomic.AddInt64(&numberOfWorkersClosed, 1) },
-					work: func(r tract.Request) (tract.Request, bool) {
-						atomic.AddInt64(&numberOfRequestsProcessed[1], 1)
-						r = tract.AddRequestCleanup(r, func(req tract.Request, success bool) {
-							if success {
-								tractKey := 1
-								key, _ := req.Value(testLabel{}).(int)
-								numberOfRequestCleanupsMutex.Lock()
-								if _, found := numberOfRequestCleanups[tractKey][key]; found {
-									t.Errorf("request %d has already been cleaned up for tract %d", key, tractKey)
-								}
-								numberOfRequestCleanups[tractKey][key] = struct{}{}
-								numberOfRequestCleanupsMutex.Unlock()
-							}
-						})
-						return r, true
-					},
-				},
-			}),
-		),
-	)
-
-	// Pre-MakeWorker Checks
-	var (
-		expectedNumberOfRequestsProcessed       = [2]int64{0, 0}
-		expectedNumberOfMadeWorkers       int64 = 0
-		expectedNumberOfFactoriesClosed   int64 = 0
-		expectedNumberOfWorkersClosed     int64 = 0
-		expectedNumberOfRequestCleanups         = [3]map[int]struct{}{{}, {}, {}}
-	)
-	if !reflect.DeepEqual(numberOfRequestsProcessed, expectedNumberOfRequestsProcessed) {
-		t.Errorf(`number of requests processed: expected %v, received %v`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
+	if numberOfOutputPuts != expectedNumberOfOutputPuts {
+		t.Errorf(`number of output puts: expected %d, received %d`, expectedNumberOfOutputPuts, numberOfOutputPuts)
 	}
-	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
-		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
+	if numberOfOutputCloses != expectedNumberOfOutputCloses {
+		t.Errorf(`number of output closures: expected %d, received %d`, expectedNumberOfOutputCloses, numberOfOutputCloses)
 	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
-	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
-		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
-	}
-	numberOfRequestCleanupsMutex.Lock()
-	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
-		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
-	}
-	numberOfRequestCleanupsMutex.Unlock()
-
-	myWorker, err := myWorkerFactory.MakeWorker()
-	if err != nil {
-		t.Errorf("unexpected error during tract worker creation %v", err)
-	}
-
-	// Pre-Work Checks
-	expectedNumberOfRequestsProcessed = [2]int64{0, 0}
-	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 0
-	expectedNumberOfWorkersClosed = 0
-	expectedNumberOfRequestCleanups = [3]map[int]struct{}{{}, {}, {}}
-
-	if !reflect.DeepEqual(numberOfRequestsProcessed, expectedNumberOfRequestsProcessed) {
-		t.Errorf(`number of requests processed: expected %v, received %v`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
-	}
-	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
-		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
-	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
-		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
-	}
-	numberOfRequestCleanupsMutex.Lock()
-	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
-		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
-	}
-	numberOfRequestCleanupsMutex.Unlock()
-
-	myResults := make([]tract.Request, 100)
-	wg := sync.WaitGroup{}
-	for i := range myResults {
-		wg.Add(1)
-		go func(j int) {
-			defer wg.Done()
-			var success bool
-			myRequest := context.WithValue(context.Background(), testLabel{}, j)
-			myRequest = tract.AddRequestCleanup(myRequest, func(req tract.Request, success bool) {
-				if success {
-					tractKey := 2
-					key, _ := req.Value(testLabel{}).(int)
-					numberOfRequestCleanupsMutex.Lock()
-					if _, found := numberOfRequestCleanups[tractKey][key]; found {
-						t.Errorf("request %d has already been cleaned up for tract %d", key, tractKey)
-					}
-					numberOfRequestCleanups[tractKey][key] = struct{}{}
-					numberOfRequestCleanupsMutex.Unlock()
-				}
-			})
-			myResults[j], success = myWorker.Work(myRequest)
-			if !success {
-				t.Errorf("call to work did not succeed")
-			}
-		}(i)
-	}
-	wg.Wait()
-	for i := range myResults {
-		label := myResults[i].Value(testLabel{})
-		if label != i {
-			t.Errorf("expected same request back from function call, not a different one: expected %d, received %+#v", i, label)
-		}
-	}
-
-	// Pre-Close Checks
-	expectedNumberOfRequestsProcessed = [2]int64{100, 100}
-	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 0
-	expectedNumberOfWorkersClosed = 0
-	expectedNumberOfRequestCleanups = [3]map[int]struct{}{
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{},
-	}
-
-	if !reflect.DeepEqual(numberOfRequestsProcessed, expectedNumberOfRequestsProcessed) {
-		t.Errorf(`number of requests processed: expected %v, received %v`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
-	}
-	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
-		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
-	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
-		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
-	}
-	numberOfRequestCleanupsMutex.Lock()
-	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
-		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
-	}
-	numberOfRequestCleanupsMutex.Unlock()
-
-	myWorker.Close()
-	myWorkerFactory.Close()
-
-	// Pre-Final Cleanup Checks
-	expectedNumberOfRequestsProcessed = [2]int64{100, 100}
-	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 1
-	expectedNumberOfWorkersClosed = 5
-	expectedNumberOfRequestCleanups = [3]map[int]struct{}{
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{},
-	}
-
-	if !reflect.DeepEqual(numberOfRequestsProcessed, expectedNumberOfRequestsProcessed) {
-		t.Errorf(`number of requests processed: expected %v, received %v`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
-	}
-	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
-		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
-	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
-		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
-	}
-	numberOfRequestCleanupsMutex.Lock()
-	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
-		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
-	}
-	numberOfRequestCleanupsMutex.Unlock()
-
-	// Cleanups we set before sending the request through the tract worker should not have been called, and should still exist for us to call.
-	// Any cleanups the tract inside the worker performed should have been called already and removed.
-	for i := range myResults {
-		tract.CleanupRequest(myResults[i], true)
-	}
-
-	// Final Checks
-	expectedNumberOfRequestsProcessed = [2]int64{100, 100}
-	expectedNumberOfMadeWorkers = 5
-	expectedNumberOfFactoriesClosed = 1
-	expectedNumberOfWorkersClosed = 5
-	expectedNumberOfRequestCleanups = [3]map[int]struct{}{
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-		{
-			0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {},
-			10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}, 17: {}, 18: {}, 19: {},
-			20: {}, 21: {}, 22: {}, 23: {}, 24: {}, 25: {}, 26: {}, 27: {}, 28: {}, 29: {},
-			30: {}, 31: {}, 32: {}, 33: {}, 34: {}, 35: {}, 36: {}, 37: {}, 38: {}, 39: {},
-			40: {}, 41: {}, 42: {}, 43: {}, 44: {}, 45: {}, 46: {}, 47: {}, 48: {}, 49: {},
-			50: {}, 51: {}, 52: {}, 53: {}, 54: {}, 55: {}, 56: {}, 57: {}, 58: {}, 59: {},
-			60: {}, 61: {}, 62: {}, 63: {}, 64: {}, 65: {}, 66: {}, 67: {}, 68: {}, 69: {},
-			70: {}, 71: {}, 72: {}, 73: {}, 74: {}, 75: {}, 76: {}, 77: {}, 78: {}, 79: {},
-			80: {}, 81: {}, 82: {}, 83: {}, 84: {}, 85: {}, 86: {}, 87: {}, 88: {}, 89: {},
-			90: {}, 91: {}, 92: {}, 93: {}, 94: {}, 95: {}, 96: {}, 97: {}, 98: {}, 99: {},
-		},
-	}
-
-	if !reflect.DeepEqual(numberOfRequestsProcessed, expectedNumberOfRequestsProcessed) {
-		t.Errorf(`number of requests processed: expected %v, received %v`, expectedNumberOfRequestsProcessed, numberOfRequestsProcessed)
-	}
-	if numberOfMadeWorkers != expectedNumberOfMadeWorkers {
-		t.Errorf(`number of made workers: expected %d, received %d`, expectedNumberOfMadeWorkers, numberOfMadeWorkers)
-	}
-	if numberOfFactoriesClosed != expectedNumberOfFactoriesClosed {
-		t.Errorf(`number of factory closures: expected %d, received %d`, expectedNumberOfFactoriesClosed, numberOfFactoriesClosed)
-	}
-	if numberOfWorkersClosed != expectedNumberOfWorkersClosed {
-		t.Errorf(`number of worker closures: expected %d, received %d`, expectedNumberOfWorkersClosed, numberOfWorkersClosed)
-	}
-	numberOfRequestCleanupsMutex.Lock()
-	if !reflect.DeepEqual(numberOfRequestCleanups, expectedNumberOfRequestCleanups) {
-		t.Errorf(`number of request clean ups run: expected %v, received %v`, expectedNumberOfRequestCleanups, numberOfRequestCleanups)
-	}
-	numberOfRequestCleanupsMutex.Unlock()
 }

@@ -1,152 +1,166 @@
 package tract
 
 import (
+	"fmt"
 	"sync"
 )
 
-// NewWorkerTract makes a new tract that will spin up @size number of workers generated from @workerFactory
+// NewWorkerFactoryTract makes a new tract that will spin up @size number of workers generated from @workerFactory
 // that get from the input and put to the output of the tract.
-func NewWorkerTract(name string, size int, workerFactory WorkerFactory, options ...WorkerTractOption) Tract {
-	return &workerTract{
-		// input and output are overwritten when tracts are linked together
-		input:              InputGenerator{},
-		output:             FinalOutput{},
-		factory:            workerFactory,
-		name:               name,
-		size:               size,
-		options:            options,
-		shouldCloseFactory: false,
+func NewWorkerFactoryTract[InputType, OutputType Request, WorkerType Worker[InputType, OutputType]](
+	name string,
+	size int,
+	workerFactory WorkerFactory[InputType, OutputType, WorkerType],
+) Tract[InputType, OutputType] {
+	p := &workerTract[InputType, OutputType]{
+		factory: newInternalWorkerFactory(workerFactory),
+		name:    name,
+		size:    size,
 	}
+	return p
 }
 
-type workerTract struct {
+// NewWorkerTract makes a new tract that will spin up @size number of @workers
+// @worker's Work() method must be  thread safe.
+// that get from the input and put to the output of the tract.
+func NewWorkerTract[InputType, OutputType Request](
+	name string,
+	size int,
+	worker Worker[InputType, OutputType],
+) Tract[InputType, OutputType] {
+	return NewWorkerFactoryTract(name, size, NewFactoryFromWorker(worker))
+}
+
+type workerTract[InputType, OutputType Request] struct {
 	// NewWorkerTract() contructor initilized fields
 
-	// Input used by all workers
-	input Input
-	// Output used by all workers
-	output Output
-	// Factory that makes the workers on demand
-	factory WorkerFactory
 	// Name of the Tract: used for logging and instrementation
 	name string
 	// Amount of workers to start
 	size int
-	// Additonal options applied to the tract on startup
-	options []WorkerTractOption
-
-	// init() initialized fields
-
-	// Workers
-	workers []Worker
-
-	// applyOptions() initialized fields
-
-	// Handler for request latency metrics within each running process in the tract
-	metricsHandler     MetricsHandler
-	shouldCloseFactory bool
+	// Factory that makes the workers on demand
+	factory WorkerFactory[InputType, OutputType, Worker[InputType, OutputType]]
 }
 
-func (p *workerTract) Name() string {
+func (p *workerTract[InputType, OutputType]) Name() string {
 	return p.name
 }
 
-func (p *workerTract) Init() error {
-	// Close the workers just in case init was called multiple times
-	p.closeWorkers()
-	// Make all the  workers
-	p.workers = make([]Worker, p.size)
-	var err error
-	for i := range p.workers {
-		p.workers[i], err = p.factory.MakeWorker()
-		if err != nil {
-			p.close()
-			return err
-		}
-	}
-	return nil
+func (p *workerTract[InputType, OutputType]) Init(
+	input Input[RequestWrapper[InputType]],
+	output Output[RequestWrapper[OutputType]],
+) (TractStarter, error) {
+	input, output = newOpencensusWorkerLinks(p.name, input, output)
+	return newInitializedWorkerTract(
+		p.size,
+		p.factory,
+		input,
+		output,
+	)
 }
 
-func (p *workerTract) Start() func() {
-	p.applyOptions()
+// TractStarter for a workerTract
+func newInitializedWorkerTract[InputType, OutputType Request](
+	size int,
+	factory WorkerFactory[InputType, OutputType, Worker[InputType, OutputType]],
+	input Input[RequestWrapper[InputType]],
+	output Output[RequestWrapper[OutputType]],
+) (*initializedWorkerTract[InputType, OutputType], error) {
+	// Make all the  workers.
+	p := initializedWorkerTract[InputType, OutputType]{
+		input:   input,
+		output:  output,
+		workers: make([]Worker[InputType, OutputType], size),
+	}
+	var err error
+	for i := range p.workers {
+		p.workers[i], err = factory.MakeWorker()
+		if err != nil {
+			p.closeWorkers()
+			return nil, fmt.Errorf("failed to make worker[%d]: %w", i, err)
+		}
+	}
+
+	return &p, nil
+}
+
+type initializedWorkerTract[InputType, OutputType Request] struct {
+	// Input used by all workers
+	input Input[RequestWrapper[InputType]]
+	// Output used by all workers
+	output  Output[RequestWrapper[OutputType]]
+	workers []Worker[InputType, OutputType]
+}
+
+func (p *initializedWorkerTract[InputType, OutputType]) Start() TractWaiter {
 	// Start all the processors
 	workerWG := &sync.WaitGroup{}
 	for i := range p.workers {
 		workerWG.Add(1)
-		go func(worker Worker) {
+		go func(worker Worker[InputType, OutputType]) {
 			defer workerWG.Done()
-			process(p.input, worker, p.output, p.metricsHandler)
+			process(
+				p.input,
+				worker,
+				p.output,
+			)
 		}(p.workers[i])
 	}
-	// Automatically close all the workers, the factory, and the output when all the workers finish.
-	return func() {
+	// Automatically close all the workers and the output when all the workers finish.
+	return tractWaiterFunc(func() {
 		workerWG.Wait()
 		p.close()
-	}
+	})
 }
 
-func (p *workerTract) SetInput(in Input) {
-	p.input = in
-}
-
-func (p *workerTract) SetOutput(out Output) {
-	p.output = out
-}
-
-// This is called upon starting the tract; ensuring any changes to input or output has taken place before being called.
-func (p *workerTract) applyOptions() {
-	for _, option := range p.options {
-		option(p)
-	}
-}
-
-func (p *workerTract) close() {
+func (p *initializedWorkerTract[InputType, OutputType]) close() {
 	p.closeWorkers()
-	p.output.Close()
-	if p.shouldCloseFactory {
-		p.factory.Close()
+	if p.output != nil {
+		p.output.Close()
 	}
 }
 
-func (p *workerTract) closeWorkers() {
+func (p *initializedWorkerTract[InputType, OutputType]) closeWorkers() {
 	for i := range p.workers {
-		if worker := p.workers[i]; worker != nil {
+		switch worker := p.workers[i].(type) {
+		case Closer:
 			worker.Close()
 		}
 	}
 }
 
-func process(input Input, worker Worker, output Output, metricsHandler MetricsHandler) {
+func process[InputType, OutputType Request](
+	input Input[RequestWrapper[InputType]],
+	worker Worker[InputType, OutputType],
+	output Output[RequestWrapper[OutputType]],
+) {
 	var (
-		mh  = &manualOverrideMetricsHandler{MetricsHandler: metricsHandler}
-		in  = MetricsInput{Input: input, metricsHandler: mh}
-		w   = MetricsWorker{Worker: worker, metricsHandler: mh}
-		out = MetricsOutput{Output: output, metricsHandler: mh}
+		outputRequest OutputType
+		workerErr     error
 
-		outputRequest Request
-		shouldSend    bool
-
-		inputRequest Request
+		inputRequest RequestWrapper[InputType]
 		ok           bool
 
-		_, isHeadTract = input.(InputGenerator)
+		deadLetterOutput = newRequestWrapperOutput(newNoopOutput[OutputType]())
 	)
 	for {
-		mh.SetShouldHandle(metricsHandler != nil && metricsHandler.ShouldHandle())
-		inputRequest, ok = in.Get()
+		inputRequest, ok = input.Get()
 		if !ok {
 			break
 		}
-		outputRequest, shouldSend = w.Work(inputRequest)
-		if shouldSend {
-			out.Put(outputRequest)
+
+		outputRequest, workerErr = worker.Work(
+			inputRequest.meta.opencensusData.context(),
+			inputRequest.base,
+		)
+		outputRequestWrapper := newRequestWrapper(outputRequest, inputRequest.meta)
+
+		if workerErr == nil && output != nil {
+			output.Put(outputRequestWrapper)
 		} else {
-			cleanupRequest(outputRequest, false)
-			if isHeadTract {
-				// If this is the head tract, then the worker is responsible for termination.
-				// If the worker returns a "should not send" result, this is the signal to stop processing.
-				break
-			}
+			// Does final operations on the base of the request wrapper.
+			// NOTE: consider putting error as status on the trace and/or counting error in metric.
+			deadLetterOutput.Put(outputRequestWrapper)
 		}
 	}
 }
