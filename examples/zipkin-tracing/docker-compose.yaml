@@ -2,7 +2,9 @@ version: "2.1"
 
 services:
   zipkin-tracing-example:
-    build: .
+    build:
+      context: ../..
+      dockerfile: ./examples/zipkin-tracing/Dockerfile
     ports:
       - "8081:8081" # service (healthcheck, metrics, pprof)
     environment:

@@ -4,7 +4,9 @@ WORKDIR /var/build/go
 ARG TARGETARCH
 ENV GOARCH=$TARGETARCH
 ADD ./ ./
-RUN go build -v -mod=vendor -o /var/build/bin/ ./...
+RUN cd examples/zipkin-tracing && \
+    go mod vendor && \
+    go build -v -mod=vendor -o /var/build/bin/ ./...
 
 # STAGE 2
 # Prepare the base image

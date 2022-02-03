@@ -48,6 +48,8 @@ func (c *kafkaConsumerConfig) flags() []cli.Flag {
 	}
 }
 
+// consume makes a new kafka consumer group and consumes from it until the context is canceled or there is a fatal error.
+// messages consumed are pushed on the requests channel using logic defined in consumerGroupHandler.ConsumeClaim().
 func (c kafkaConsumerConfig) consume(ctx context.Context, requests chan<- request) error {
 	consumerGroup, err := sarama.NewConsumerGroup(c.brokers.Value(), c.consumerGroupName, c.config)
 	if err != nil {
@@ -91,6 +93,23 @@ func isRetryableKafkaError(e error) bool {
 	return false
 }
 
+// NewRequestLinks creates the input and output parameters needed to fulfill tract.(Tract).Init().
+// requests is a channel of requests expected to be filled by consumerGroupHandler.ConsumeClaim().
+// The context on requests are used as a base context for the tract processing of that request.
+func NewRequestLinks(requests chan request) (
+	tract.Input[tract.RequestWrapper[request]],
+	tract.Output[tract.RequestWrapper[request]],
+) {
+	input, output := tract.NewRequestWrapperLinks[request, request](
+		tract.NewChannel(requests),
+		newRequestOutput(),
+	)
+	input.BaseContext = func(req request) context.Context {
+		return req.ctx
+	}
+	return input, output
+}
+
 type request struct {
 	ctx     context.Context
 	rawData []byte
@@ -110,6 +129,9 @@ type consumerGroupHandler struct {
 func (consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
 func (consumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
+// ConsumeClaim consumes messsges from kafka, starts a tracing span to be used as the base of the message's request in the app.
+// messages are sent on h.requests with the raw value bytes and tracing fields.
+// The span started here is expected to be closed by requestOutput.
 func (h *consumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		var ctx, span = trace.StartSpan(context.Background(), "base/kafka")
@@ -120,6 +142,10 @@ func (h *consumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, cl
 			trace.Int64Attribute("kafka.offset", msg.Offset),
 		)
 
+		// We are going to pass this message to a tract which processes messages in parallel.
+		// Since this block is going to immediately grab another message which could potenitally
+		// finish while the first one fails, we might as well commit the offset now to avoid a
+		// needless race.
 		sess.MarkMessage(msg, "")
 
 		h.requests <- request{

@@ -54,4 +54,5 @@ processes through its tract, and passed along to the fanout tract's output.
 TODO:
 * Focus on ease of use.
   - look into simplifying the external api.
-* add example of supplying a base context
+  - consider an input factory interface that can be fulfilled and provided to a tract runner.
+    * This can be used to construct the input when the tract is actually initiallized. Potenitally useful for only starting to read from an input queue during the tract's initilization step.

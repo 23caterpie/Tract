@@ -42,7 +42,6 @@ func newRunner() *runner {
 }
 
 type runner struct {
-	// TODO: add zipkin and promethius configs.
 	kafkaConsumerConfig kafkaConsumerConfig
 	parseWorkerConfig   urfavtract.WorkerTractConfig
 	sqrtWorkerConfig    urfavtract.WorkerTractConfig
@@ -109,18 +108,13 @@ func (r *runner) action(*cli.Context) error {
 		}),
 	))
 
-	// Setup inputs and outputs of tract to use context from request.
+	// TODO: this process could be simpler if the tract runner supported input/output factories.
+
+	// Define the channel used to connect our kafka comsumer to the input of the tract.
 	requests := make(chan request)
-	input, output := tract.NewRequestWrapperLinks[request, request](
-		tract.NewChannel(requests),
-		newRequestOutput(),
-	)
-	input.BaseContext = func(req request) context.Context {
-		return req.ctx
-	}
 
 	// Init and start tract.
-	tractStarter, err := myTract.Init(input, output)
+	tractStarter, err := myTract.Init(NewRequestLinks(requests))
 	if err != nil {
 		return fmt.Errorf("error initilizing tract: %w", err)
 	}
